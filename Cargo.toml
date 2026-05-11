@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: Copyright The arm-firme Contributors.
+# SPDX-License-Identifier: MIT OR Apache-2.0
+
+[package]
+name = "arm-firme"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Arm Firmware Interfaces for Realm Management Extension"
+repository = "https://git.trustedfirmware.org/arm-firmware-crates/arm-firme.git"
+keywords = ["arm", "aarch64", "realm", "rme", "cca"]
+categories = ["hardware-support", "embedded", "no-std", "no-std::no-alloc"]
+readme = "README.md"
+rust-version = "1.90"
+
+[dependencies]
