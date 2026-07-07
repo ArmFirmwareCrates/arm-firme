@@ -9,6 +9,8 @@ subject to change.*
 
 ## Implemented features
 
+- FIRME_SERVICE_VERSION ABI
+
 ## Future plans
 
 * Implementing all calls

@@ -46,6 +46,9 @@ pub enum Error {
     /// Invalid ServiceId
     #[error("invalid ServiceId {0}")]
     InvalidServiceId(u8),
+    /// Unsuccessful FIRME call
+    #[error("FIRME call return status: {0}")]
+    UnsuccessfulCall(StatusCode),
 }
 
 /// Error status codes
@@ -89,4 +92,240 @@ pub enum StatusCode {
     /// The input data is malformed.
     #[error("the input data is malformed")]
     BadData = -11,
+}
+
+/// FIRME services
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive)]
+#[num_enum(error_type(name = Error, constructor = Error::InvalidServiceId))]
+#[repr(u8)]
+pub enum ServiceId {
+    /// Base service
+    Base = 0,
+    /// Granule management service
+    GranuleManagement = 1,
+    /// IDE key management service
+    IDEKeyManagement = 2,
+    /// MECID management service
+    MECIDManagement = 3,
+    /// Attestation service
+    Attestation = 4,
+    /// Integrated device management service
+    IntegratedDeviceManagement = 5,
+}
+
+/// Each implemented FIRME service has its own `ServiceVersion`. The implemented FIRME version is
+/// derived from the versions of implemented services.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ServiceVersion {
+    /// Major version number
+    pub major: u16,
+    /// Minor version number
+    pub minor: u16,
+}
+
+impl ServiceVersion {
+    /// Create a ServiceVersion
+    pub const fn new(major: u16, minor: u16) -> Self {
+        assert!(major <= 0x7fff);
+        Self { major, minor }
+    }
+}
+
+impl TryFrom<u32> for ServiceVersion {
+    type Error = Error;
+    fn try_from(value: u32) -> Result<Self, Error> {
+        let major = (value >> 16) as u16;
+
+        if major & 0x7fff != major {
+            return Err(Error::MajorVersionOutOfRange);
+        }
+
+        Ok(Self {
+            major,
+            minor: (value & 0xFFFF) as u16,
+        })
+    }
+}
+
+impl From<ServiceVersion> for u32 {
+    fn from(version: ServiceVersion) -> Self {
+        assert!(version.major <= 0x7fff);
+        (version.major as u32) << 16 | version.minor as u32
+    }
+}
+
+impl From<ServiceVersion> for u64 {
+    fn from(version: ServiceVersion) -> Self {
+        u32::from(version).into()
+    }
+}
+
+impl TryFrom<u64> for ServiceVersion {
+    type Error = Error;
+
+    fn try_from(value: u64) -> Result<Self, Error> {
+        u32::try_from(value)
+            .map_err(|_| Error::MajorVersionOutOfRange)?
+            .try_into()
+    }
+}
+
+/// Function IDs based on Chapter 8.
+#[derive(Clone, Copy, Debug, Eq, IntoPrimitive, PartialEq, TryFromPrimitive)]
+#[num_enum(error_type(name = Error, constructor = Error::UnrecognisedFunctionId))]
+#[repr(u32)]
+pub enum FunctionId {
+    /// FIRME_SERVICE_VERSION function id
+    ServiceVersion = 0xC4000400,
+}
+
+/// Enum for representing FIRME requests and their arguments.
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum Function {
+    /// FIRME_SERVICE_VERSION function
+    ServiceVersion {
+        /// Service id
+        service_id: ServiceId,
+    },
+}
+
+impl Function {
+    /// Returns the FunctionId of the current Function.
+    pub fn id(&self) -> FunctionId {
+        match self {
+            Function::ServiceVersion { .. } => FunctionId::ServiceVersion,
+        }
+    }
+}
+
+impl TryFrom<&[u64; 4]> for Function {
+    type Error = Error;
+
+    fn try_from(regs: &[u64; 4]) -> Result<Self, Error> {
+        let fid = FunctionId::try_from(regs[0] as u32)?;
+
+        let func = match fid {
+            FunctionId::ServiceVersion => Self::ServiceVersion {
+                service_id: ServiceId::try_from(regs[1] as u8)?,
+            },
+        };
+        Ok(func)
+    }
+}
+
+/// Enum for representing the return parameters of FIRME calls
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum Response {
+    /// FIRME_SERVICE_VERSION response
+    ServiceVersion {
+        /// ServiceVersion
+        service_version: ServiceVersion,
+    },
+}
+
+impl TryFrom<(FunctionId, &[u64; 4])> for Response {
+    type Error = Error;
+
+    fn try_from((function_id, regs): (FunctionId, &[u64; 4])) -> Result<Self, Error> {
+        match function_id {
+            FunctionId::ServiceVersion => {
+                // The ServiceVersion and the StatusCode share reg[0].
+                let reg = regs[0] as u32;
+                if reg & (1 << 31) == 0 {
+                    Ok(Self::ServiceVersion {
+                        service_version: ServiceVersion::try_from(reg)?,
+                    })
+                } else {
+                    let status: StatusCode = (regs[0] as i32).try_into()?;
+                    Err(Error::UnsuccessfulCall(status))
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::*;
+
+    #[test]
+    fn service_id() {
+        assert_eq!(ServiceId::try_from(0), Ok(ServiceId::Base));
+        assert_eq!(ServiceId::try_from(6), Err(Error::InvalidServiceId(6)));
+    }
+
+    #[test]
+    fn service_version() {
+        assert_eq!(
+            ServiceVersion::try_from(0u32),
+            Ok(ServiceVersion { minor: 0, major: 0 })
+        );
+        assert_eq!(
+            ServiceVersion::try_from(0xFFFFu32),
+            Ok(ServiceVersion {
+                major: 0,
+                minor: 0xFFFF
+            })
+        );
+        assert_eq!(
+            ServiceVersion::try_from(0x7FFF_FFFFu32),
+            Ok(ServiceVersion {
+                major: 0x7FFF,
+                minor: 0xFFFF
+            })
+        );
+        assert_eq!(
+            ServiceVersion::try_from(0x8000_0000u32),
+            Err(Error::MajorVersionOutOfRange)
+        );
+    }
+
+    #[test]
+    fn function_id_service_version() {
+        let service_version = 0x0000_0000_C400_0400;
+        let regs: [u64; 4] = [service_version, 1, 0, 0];
+        assert_eq!(
+            Function::try_from(&regs).unwrap(),
+            Function::ServiceVersion {
+                service_id: ServiceId::GranuleManagement
+            }
+        );
+
+        // out-of-range ServiceId getting truncated to an invalid value
+        let regs: [u64; 4] = [service_version, 0xFFFF, 0, 0];
+        assert_eq!(
+            Function::try_from(&regs),
+            Err(Error::InvalidServiceId(0xFF))
+        );
+
+        // out-of-range ServiceId getting truncated to a valid value
+        let regs: [u64; 4] = [service_version, 0xFF02, 0, 0];
+        assert_eq!(
+            Function::try_from(&regs).unwrap(),
+            Function::ServiceVersion {
+                service_id: ServiceId::IDEKeyManagement
+            }
+        );
+    }
+
+    #[test]
+    fn service_version_response() {
+        // Successful response
+        let bits: u64 = ServiceVersion::new(1, 2).into();
+        let regs: [u64; 4] = [bits, 0, 0, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::ServiceVersion, &regs)).unwrap(),
+            Response::ServiceVersion {
+                service_version: ServiceVersion { major: 1, minor: 2 }
+            }
+        );
+
+        // Unsuccessful response
+        let bits = StatusCode::NotSupported as u64;
+        let regs: [u64; 4] = [bits, 0, 0, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::ServiceVersion, &regs)),
+            Err(Error::UnsuccessfulCall(StatusCode::NotSupported))
+        );
+    }
 }
