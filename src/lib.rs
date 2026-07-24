@@ -50,6 +50,9 @@ pub enum Error {
     /// Unsuccessful FIRME call
     #[error("FIRME call return status: {0}")]
     UnsuccessfulCall(StatusCode),
+    /// Invalid GPI encoding
+    #[error("invalid GPIAccessType encoding {0}")]
+    InvalidGPIEncoding(u8),
 }
 
 /// Error status codes
@@ -180,6 +183,8 @@ pub enum FunctionId {
     ServiceVersion = 0xC4000400,
     /// FIRME_SERVICE_FEATURES function id
     ServiceFeatures = 0xC4000401,
+    /// FIRME_GM_GPI_SET function id
+    GmGPISet = 0xC4000402,
 }
 
 /// Enum for representing FIRME requests and their arguments.
@@ -197,6 +202,15 @@ pub enum Function {
         /// Feature register index
         feature_reg_index: u8,
     },
+    /// FIRME_GM_GPI_SET function
+    GmGPISet {
+        /// Base address
+        base_address: u64,
+        /// Granule count
+        granule_count: u64,
+        /// Target GPI
+        target_gpi: GPIAccessType,
+    },
 }
 
 impl Function {
@@ -205,6 +219,7 @@ impl Function {
         match self {
             Function::ServiceVersion { .. } => FunctionId::ServiceVersion,
             Function::ServiceFeatures { .. } => FunctionId::ServiceFeatures,
+            Function::GmGPISet { .. } => FunctionId::GmGPISet,
         }
     }
 }
@@ -222,6 +237,11 @@ impl TryFrom<&[u64; 4]> for Function {
             FunctionId::ServiceFeatures => Self::ServiceFeatures {
                 service_id: ServiceId::try_from(regs[1] as u8)?,
                 feature_reg_index: regs[2] as u8,
+            },
+            FunctionId::GmGPISet => Self::GmGPISet {
+                base_address: regs[1],
+                granule_count: regs[2],
+                target_gpi: GPIAccessType::try_from(regs[3])?,
             },
         };
         Ok(func)
@@ -242,6 +262,40 @@ pub enum Response {
         /// register corresponding to the [`ServiceId`] and feature register
         /// index input parameters.
         register: FeatureRegister,
+    },
+    /// FIRME_GM_GPI_SET response
+    GmGPISet {
+        /// Generic response for all defined return values.
+        response: GpiSetStatus,
+    },
+}
+
+/// Represents the different statuses `FIRME_GM_GPI_SET` can return
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum GpiSetStatus {
+    /// `FIRME_GM_GPI_SET` ABI completed
+    Complete {
+        /// Count of granules starting from the first granule at the Base Address
+        /// whose GPI encoding was changed
+        granule_count: u64,
+    },
+    /// `FIRME_GM_GPI_SET` ABI was partially completed
+    Incomplete {
+        /// Count of granules starting from the first granule at the Base Address
+        /// whose GPI encoding was changed
+        granule_count: u64,
+        /// A cookie representing the incomplete transaction.
+        /// The caller passes the cookie to the callee in an invocation of the
+        /// `FIRME_GM_GPI_OP_CONTINUE` ABI.
+        cookie: u64,
+    },
+    /// `FIRME_GM_GPI_SET` ABI returned `Denied`, `OpConflict` or `NotFound` status
+    Error {
+        /// Exact status code of the response
+        status: StatusCode,
+        /// Count of granules starting from the first granule at the Base Address
+        /// whose GPI encoding was changed
+        granule_count: u64,
     },
 }
 
@@ -272,7 +326,90 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
                     Err(Error::UnsuccessfulCall(status))
                 }
             }
+            FunctionId::GmGPISet => {
+                let status = StatusCode::try_from(regs[0] as i32)?;
+                let granule_count = regs[1];
+
+                match status {
+                    StatusCode::Incomplete => {
+                        let cookie = regs[2];
+                        Ok(Self::GmGPISet {
+                            response: GpiSetStatus::Incomplete {
+                                granule_count,
+                                cookie,
+                            },
+                        })
+                    }
+                    StatusCode::Success => Ok(Self::GmGPISet {
+                        response: GpiSetStatus::Complete { granule_count },
+                    }),
+                    StatusCode::Denied | StatusCode::OpConflict | StatusCode::NotFound => {
+                        Ok(Self::GmGPISet {
+                            response: GpiSetStatus::Error {
+                                status,
+                                granule_count,
+                            },
+                        })
+                    }
+                    _ => Err(Error::UnsuccessfulCall(status)),
+                }
+            }
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
+#[num_enum(error_type(name = Error, constructor = Error::InvalidGPIEncoding))]
+#[repr(u8)]
+/// Access control restriction that can be applied to a memory region in the GPT.
+pub enum GPIAccessType {
+    /// No accesses permitted.
+    NoAccess = 0b0000,
+    /// Accesses permitted to System Agent PA space only.
+    /// This encoding is reserved if GPCCR_EL3.SA is 0, or if FEAT_RME_GDI is not implemented.
+    SystemAgent = 0b0100,
+    /// Accesses permitted to Non-secure Protected PA space only.
+    /// This encoding is reserved if GPCCR_EL3.NSP is 0, or if FEAT_RME_GDI is not implemented.
+    NonSecureProtected = 0b0101,
+    /// No accesses permitted.
+    /// This encoding is reserved if GPCCR_EL3.NA6 is 0, or if FEAT_RME_GDI is not implemented.
+    NoAccess6 = 0b0110,
+    /// No accesses permitted.
+    /// This encoding is reserved if GPCCR_EL3.NA7 is 0, or if FEAT_RME_GDI is not implemented.
+    NoAccess7 = 0b0111,
+    /// Accesses permitted to Secure PA space only.
+    /// This encoding is reserved if FEAT_SEL2 is not implemented.
+    Secure = 0b1000,
+    /// Accesses permitted to Non-secure PA space only.
+    NonSecure = 0b1001,
+    /// Accesses permitted to Root PA space only.
+    Root = 0b1010,
+    /// Accesses permitted to Realm PA space only.
+    Realm = 0b1011,
+    /// Accesses permitted to Non-secure PA space only, by Non-secure or Root Security states.
+    /// This encoding is reserved if the Effective value of GPCCR_EL3.NSO is 0, or if FEAT_RME_GPC2
+    /// is not implemented.
+    NonSecureRoot = 0b1101,
+    /// All accesses permitted.
+    Any = 0b1111,
+}
+
+impl GPIAccessType {
+    /// MASK selecting the useful bits from the `u8` used for storing `GPIAccessType`s.
+    pub const MASK: u64 = 0b1111;
+}
+
+impl TryFrom<u64> for GPIAccessType {
+    type Error = Error;
+
+    fn try_from(reg: u64) -> Result<GPIAccessType, Error> {
+        GPIAccessType::try_from((reg & GPIAccessType::MASK) as u8)
+    }
+}
+
+impl From<GPIAccessType> for u64 {
+    fn from(gpi: GPIAccessType) -> u64 {
+        u8::from(gpi) as u64
     }
 }
 
@@ -401,13 +538,13 @@ mod tests {
         let regs: [u64; 4] = [StatusCode::Success as u64, bits, 0, 0];
         let resp = Response::try_from((FunctionId::ServiceFeatures, &regs)).unwrap();
         match resp {
-            Response::ServiceVersion { .. } => panic!(),
             Response::ServiceFeatures { register } => {
                 let base = BaseServiceFeaturesRegister1::try_from(register).unwrap();
                 assert!(base.contains(BaseServiceFeaturesRegister1::INTEGRATED_DEVICE_MANAGEMENT));
                 assert!(base.contains(BaseServiceFeaturesRegister1::MECID_MANAGEMENT));
                 assert!(base.contains(BaseServiceFeaturesRegister1::GRANULE_MANAGEMENT));
             }
+            _ => panic!(),
         }
 
         // Unsuccessful response
@@ -419,6 +556,116 @@ mod tests {
         assert_eq!(
             Response::try_from((FunctionId::ServiceFeatures, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::NotSupported)),
+        );
+    }
+
+    #[test]
+    fn gpi_encodings() {
+        assert_eq!(
+            GPIAccessType::NoAccess,
+            GPIAccessType::try_from(0b0000_0000u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::SystemAgent,
+            GPIAccessType::try_from(0b0000_0100u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::NonSecureProtected,
+            GPIAccessType::try_from(0b0000_0101u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::NoAccess6,
+            GPIAccessType::try_from(0b0000_0110u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::NoAccess7,
+            GPIAccessType::try_from(0b0000_0111u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::Secure,
+            GPIAccessType::try_from(0b0000_1000u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::NonSecure,
+            GPIAccessType::try_from(0b0000_1001u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::Root,
+            GPIAccessType::try_from(0b0000_1010u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::Realm,
+            GPIAccessType::try_from(0b0000_1011u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::NonSecureRoot,
+            GPIAccessType::try_from(0b0000_1101u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::Any,
+            GPIAccessType::try_from(0b0000_1111u8).unwrap()
+        );
+        assert_eq!(
+            GPIAccessType::NoAccess,
+            GPIAccessType::try_from(0b1_0000_0000u64).unwrap(),
+        );
+    }
+
+    #[test]
+    fn function_id_gm_gpi_set() {
+        let gpi_set = 0x0000_0000_C400_0402;
+        let regs: [u64; 4] = [gpi_set, 0x8000_0000, 0xABC, 0x0F];
+
+        assert_eq!(
+            Function::try_from(&regs).unwrap(),
+            Function::GmGPISet {
+                base_address: 0x8000_0000,
+                granule_count: 0xABC,
+                target_gpi: GPIAccessType::Any,
+            }
+        );
+    }
+
+    #[test]
+    fn gm_gpi_set_response() {
+        // Successful response
+        let regs: [u64; 4] = [StatusCode::Success as u64, 2, 0, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmGPISet, &regs)).unwrap(),
+            Response::GmGPISet {
+                response: GpiSetStatus::Complete { granule_count: 2 },
+            }
+        );
+
+        // Incomplete response
+        let regs: [u64; 4] = [StatusCode::Incomplete as u64, 2, 0x123, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmGPISet, &regs)).unwrap(),
+            Response::GmGPISet {
+                response: GpiSetStatus::Incomplete {
+                    granule_count: 2,
+                    cookie: 0x123,
+                }
+            }
+        );
+
+        // Valid error response
+        let regs: [u64; 4] = [StatusCode::Denied as u64, 2, 0, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmGPISet, &regs)).unwrap(),
+            Response::GmGPISet {
+                response: GpiSetStatus::Error {
+                    status: StatusCode::Denied,
+                    granule_count: 2
+                }
+            }
+        );
+
+        // Other unexpected response
+        let regs: [u64; 4] = [StatusCode::AlreadyExists as u64, 2, 0x123, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmGPISet, &regs)),
+            Err(Error::UnsuccessfulCall(StatusCode::AlreadyExists)),
         );
     }
 }

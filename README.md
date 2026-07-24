@@ -11,6 +11,7 @@ subject to change.*
 
 - FIRME_SERVICE_VERSION ABI
 - FIRME_SERVICE_FEATURES ABI
+- FIRME_GM_GPI_SET ABI
 
 ## Future plans
 
