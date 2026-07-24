@@ -10,6 +10,7 @@
 /// Feature discovery
 pub mod features;
 
+use crate::features::FeatureRegister;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use thiserror::Error;
 
@@ -177,6 +178,8 @@ impl TryFrom<u64> for ServiceVersion {
 pub enum FunctionId {
     /// FIRME_SERVICE_VERSION function id
     ServiceVersion = 0xC4000400,
+    /// FIRME_SERVICE_FEATURES function id
+    ServiceFeatures = 0xC4000401,
 }
 
 /// Enum for representing FIRME requests and their arguments.
@@ -187,6 +190,13 @@ pub enum Function {
         /// Service id
         service_id: ServiceId,
     },
+    /// FIRME_SERVICE_FEATURES function
+    ServiceFeatures {
+        /// Service id
+        service_id: ServiceId,
+        /// Feature register index
+        feature_reg_index: u8,
+    },
 }
 
 impl Function {
@@ -194,6 +204,7 @@ impl Function {
     pub fn id(&self) -> FunctionId {
         match self {
             Function::ServiceVersion { .. } => FunctionId::ServiceVersion,
+            Function::ServiceFeatures { .. } => FunctionId::ServiceFeatures,
         }
     }
 }
@@ -208,6 +219,10 @@ impl TryFrom<&[u64; 4]> for Function {
             FunctionId::ServiceVersion => Self::ServiceVersion {
                 service_id: ServiceId::try_from(regs[1] as u8)?,
             },
+            FunctionId::ServiceFeatures => Self::ServiceFeatures {
+                service_id: ServiceId::try_from(regs[1] as u8)?,
+                feature_reg_index: regs[2] as u8,
+            },
         };
         Ok(func)
     }
@@ -220,6 +235,13 @@ pub enum Response {
     ServiceVersion {
         /// ServiceVersion
         service_version: ServiceVersion,
+    },
+    /// FIRME_SERVICE_FEATURES response
+    ServiceFeatures {
+        /// If the Return status is SUCCESS, this is the value of the feature
+        /// register corresponding to the [`ServiceId`] and feature register
+        /// index input parameters.
+        register: FeatureRegister,
     },
 }
 
@@ -240,6 +262,16 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
                     Err(Error::UnsuccessfulCall(status))
                 }
             }
+            FunctionId::ServiceFeatures => {
+                let status = StatusCode::try_from(regs[0] as i32)?;
+                if status == StatusCode::Success {
+                    Ok(Self::ServiceFeatures {
+                        register: FeatureRegister(regs[1]),
+                    })
+                } else {
+                    Err(Error::UnsuccessfulCall(status))
+                }
+            }
         }
     }
 }
@@ -247,6 +279,7 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
 #[cfg(test)]
 mod tests {
     use crate::*;
+    use features::BaseServiceFeaturesRegister1;
 
     #[test]
     fn service_id() {
@@ -326,6 +359,66 @@ mod tests {
         assert_eq!(
             Response::try_from((FunctionId::ServiceVersion, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::NotSupported))
+        );
+    }
+
+    #[test]
+    fn function_id_service_features() {
+        let service_features = 0x0000_0000_C400_0401;
+        let regs: [u64; 4] = [service_features, 1, 0, 0];
+        assert_eq!(
+            Function::try_from(&regs).unwrap(),
+            Function::ServiceFeatures {
+                service_id: ServiceId::GranuleManagement,
+                feature_reg_index: 0,
+            }
+        );
+        let regs: [u64; 4] = [service_features, 5, 1, 0];
+        assert_eq!(
+            Function::try_from(&regs).unwrap(),
+            Function::ServiceFeatures {
+                service_id: ServiceId::IntegratedDeviceManagement,
+                feature_reg_index: 1,
+            }
+        );
+        let regs: [u64; 4] = [service_features, 3, 0xFF, 0];
+        assert_eq!(
+            Function::try_from(&regs).unwrap(),
+            Function::ServiceFeatures {
+                service_id: ServiceId::MECIDManagement,
+                feature_reg_index: 0xFF,
+            }
+        );
+    }
+
+    #[test]
+    fn service_features_response() {
+        // Successful response
+        let bits: u64 = (BaseServiceFeaturesRegister1::INTEGRATED_DEVICE_MANAGEMENT
+            | BaseServiceFeaturesRegister1::MECID_MANAGEMENT
+            | BaseServiceFeaturesRegister1::GRANULE_MANAGEMENT)
+            .bits();
+        let regs: [u64; 4] = [StatusCode::Success as u64, bits, 0, 0];
+        let resp = Response::try_from((FunctionId::ServiceFeatures, &regs)).unwrap();
+        match resp {
+            Response::ServiceVersion { .. } => panic!(),
+            Response::ServiceFeatures { register } => {
+                let base = BaseServiceFeaturesRegister1::try_from(register).unwrap();
+                assert!(base.contains(BaseServiceFeaturesRegister1::INTEGRATED_DEVICE_MANAGEMENT));
+                assert!(base.contains(BaseServiceFeaturesRegister1::MECID_MANAGEMENT));
+                assert!(base.contains(BaseServiceFeaturesRegister1::GRANULE_MANAGEMENT));
+            }
+        }
+
+        // Unsuccessful response
+        let bits: u64 = (BaseServiceFeaturesRegister1::INTEGRATED_DEVICE_MANAGEMENT
+            | BaseServiceFeaturesRegister1::MECID_MANAGEMENT
+            | BaseServiceFeaturesRegister1::GRANULE_MANAGEMENT)
+            .bits();
+        let regs: [u64; 4] = [StatusCode::NotSupported as u64, bits, 0, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::ServiceFeatures, &regs)),
+            Err(Error::UnsuccessfulCall(StatusCode::NotSupported)),
         );
     }
 }

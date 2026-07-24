@@ -10,6 +10,7 @@ subject to change.*
 ## Implemented features
 
 - FIRME_SERVICE_VERSION ABI
+- FIRME_SERVICE_FEATURES ABI
 
 ## Future plans
 
