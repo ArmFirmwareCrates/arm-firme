@@ -75,18 +75,18 @@ pub enum StatusCode {
     /// Denied
     #[error("denied")]
     Denied = -5,
-    /// Retry
-    #[error("retry")]
-    Retry = -6,
+    /// Busy
+    #[error("busy")]
+    Busy = -6,
     /// Another operation in progress
     #[error("another operation in progress")]
-    InProgress = -7,
-    /// Operation attempts to create an object that already exists.
-    #[error("operation attempts to create an object that already exists")]
-    Exists = -8,
+    OpConflict = -7,
+    /// Operation attemps to create an object that already exists.
+    #[error("operation attemps to create an object that already exists")]
+    AlreadyExists = -8,
     /// An object required to complete the requested operation does not exist.
     #[error("an object required to complete the requested operation does not exist")]
-    NoEntry = -9,
+    NotFound = -9,
     /// Unable to allocate memory required to complete the operation.
     #[error("unable to allocate memory required to complete the operation")]
     NoMemory = -10,
