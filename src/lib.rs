@@ -189,6 +189,8 @@ pub enum FunctionId {
     GmGPIOpContinue = 0xC4000412,
     /// FIRME_GM_L1_GPT_CREATE function id
     GmL1GPTCreate = 0xC400040E,
+    /// FIRME_GM_L1_GPT_DESTROY function id
+    GmL1GPTDestroy = 0xC400040F,
 }
 
 /// Enum for representing FIRME requests and their arguments.
@@ -228,6 +230,11 @@ pub enum Function {
         /// Physical base address of the L1 GPT for the specified protected address range.
         l1_gpt_base: u64,
     },
+    /// FIRME_GM_L1_GPT_DESTROY function
+    GmL1GPTDestroy {
+        /// Physical base address of a protected address range.
+        pa_range_base: u64,
+    },
 }
 
 impl Function {
@@ -239,6 +246,7 @@ impl Function {
             Function::GmGPISet { .. } => FunctionId::GmGPISet,
             Function::GmGPIOpContinue { .. } => FunctionId::GmGPIOpContinue,
             Function::GmL1GPTCreate { .. } => FunctionId::GmL1GPTCreate,
+            Function::GmL1GPTDestroy { .. } => FunctionId::GmL1GPTDestroy,
         }
     }
 }
@@ -266,6 +274,9 @@ impl TryFrom<&[u64; 4]> for Function {
             FunctionId::GmL1GPTCreate => Self::GmL1GPTCreate {
                 pa_range_base: regs[1],
                 l1_gpt_base: regs[2],
+            },
+            FunctionId::GmL1GPTDestroy => Self::GmL1GPTDestroy {
+                pa_range_base: regs[1],
             },
         };
         Ok(func)
@@ -299,6 +310,11 @@ pub enum Response {
     },
     /// FIRME_GM_L1_GPT_CREATE response
     GmL1GPTCreate,
+    /// FIRME_GM_L1_GPT_DESTROY response
+    GmL1GPTDestroy {
+        /// Physical base address of the L1 GPT for the specified protected address range.
+        l1_gpt_base: u64,
+    },
 }
 
 /// Represents the different statuses `FIRME_GM_GPI_SET` can return
@@ -455,6 +471,16 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
                 let status = StatusCode::try_from(regs[0] as i32)?;
                 if status == StatusCode::Success {
                     Ok(Self::GmL1GPTCreate)
+                } else {
+                    Err(Error::UnsuccessfulCall(status))
+                }
+            }
+            FunctionId::GmL1GPTDestroy => {
+                let status = StatusCode::try_from(regs[0] as i32)?;
+                if status == StatusCode::Success {
+                    Ok(Self::GmL1GPTDestroy {
+                        l1_gpt_base: regs[2],
+                    })
                 } else {
                     Err(Error::UnsuccessfulCall(status))
                 }
@@ -864,6 +890,38 @@ mod tests {
         let regs: [u64; 4] = [StatusCode::Denied as u64, 0, 0, 0];
         assert_eq!(
             Response::try_from((FunctionId::GmL1GPTCreate, &regs)),
+            Err(Error::UnsuccessfulCall(StatusCode::Denied)),
+        );
+    }
+
+    #[test]
+    fn function_id_gm_l1_gpt_destroy() {
+        let id = 0x0000_0000_C400_040F;
+        let regs: [u64; 4] = [id, 0xabcd_0000, 0, 0];
+
+        assert_eq!(
+            Function::try_from(&regs).unwrap(),
+            Function::GmL1GPTDestroy {
+                pa_range_base: 0xabcd_0000,
+            }
+        );
+    }
+
+    #[test]
+    fn gm_l1_gpt_destroy_response() {
+        // Successful response
+        let regs: [u64; 4] = [StatusCode::Success as u64, 0, 0xabcd_ffff, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmL1GPTDestroy, &regs)).unwrap(),
+            Response::GmL1GPTDestroy {
+                l1_gpt_base: 0xabcd_ffff,
+            },
+        );
+
+        // Unsuccessful response
+        let regs: [u64; 4] = [StatusCode::Denied as u64, 0, 0, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmL1GPTDestroy, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::Denied)),
         );
     }
