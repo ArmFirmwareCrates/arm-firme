@@ -249,6 +249,46 @@ impl Function {
             Function::GmL1GPTDestroy { .. } => FunctionId::GmL1GPTDestroy,
         }
     }
+
+    /// Copy members of `self` into `regs`.
+    pub fn copy_to_array(&self, regs: &mut [u64; 4]) {
+        regs.fill(0);
+        regs[0] = self.id() as u64;
+        match *self {
+            Self::ServiceVersion { service_id } => {
+                regs[1] = service_id as u64;
+            }
+            Self::ServiceFeatures {
+                service_id,
+                feature_reg_index,
+            } => {
+                regs[1] = service_id as u64;
+                regs[2] = feature_reg_index as u64;
+            }
+            Self::GmGPISet {
+                base_address,
+                granule_count,
+                target_gpi,
+            } => {
+                regs[1] = base_address;
+                regs[2] = granule_count;
+                regs[3] = target_gpi as u64;
+            }
+            Self::GmGPIOpContinue { cookie } => {
+                regs[1] = cookie;
+            }
+            Self::GmL1GPTCreate {
+                pa_range_base,
+                l1_gpt_base,
+            } => {
+                regs[1] = pa_range_base;
+                regs[2] = l1_gpt_base;
+            }
+            Self::GmL1GPTDestroy { pa_range_base } => {
+                regs[1] = pa_range_base;
+            }
+        }
+    }
 }
 
 impl TryFrom<&[u64; 4]> for Function {
@@ -747,14 +787,19 @@ mod tests {
         let gpi_set = 0x0000_0000_C400_0402;
         let regs: [u64; 4] = [gpi_set, 0x8000_0000, 0xABC, 0x0F];
 
+        let function = Function::try_from(&regs).unwrap();
         assert_eq!(
-            Function::try_from(&regs).unwrap(),
+            function,
             Function::GmGPISet {
                 base_address: 0x8000_0000,
                 granule_count: 0xABC,
                 target_gpi: GPIAccessType::Any,
             }
         );
+
+        let mut regs2 = [0u64; 4];
+        function.copy_to_array(&mut regs2);
+        assert_eq!(regs, regs2);
     }
 
     #[test]
@@ -805,10 +850,12 @@ mod tests {
         let id = 0x0000_0000_C400_0412;
         let regs: [u64; 4] = [id, 0x123, 0, 0];
 
-        assert_eq!(
-            Function::try_from(&regs).unwrap(),
-            Function::GmGPIOpContinue { cookie: 0x123 }
-        );
+        let function = Function::try_from(&regs).unwrap();
+        assert_eq!(function, Function::GmGPIOpContinue { cookie: 0x123 });
+
+        let mut regs2 = [0u64; 4];
+        function.copy_to_array(&mut regs2);
+        assert_eq!(regs, regs2);
     }
 
     #[test]
@@ -868,13 +915,17 @@ mod tests {
         let id = 0x0000_0000_C400_040E;
         let regs: [u64; 4] = [id, 0xabcd_0000, 0xabcd_ffff, 0];
 
+        let function = Function::try_from(&regs).unwrap();
         assert_eq!(
-            Function::try_from(&regs).unwrap(),
+            function,
             Function::GmL1GPTCreate {
                 pa_range_base: 0xabcd_0000,
                 l1_gpt_base: 0xabcd_ffff
             }
         );
+        let mut regs2 = [0u64; 4];
+        function.copy_to_array(&mut regs2);
+        assert_eq!(regs, regs2);
     }
 
     #[test]
@@ -899,12 +950,16 @@ mod tests {
         let id = 0x0000_0000_C400_040F;
         let regs: [u64; 4] = [id, 0xabcd_0000, 0, 0];
 
+        let function = Function::try_from(&regs).unwrap();
         assert_eq!(
-            Function::try_from(&regs).unwrap(),
+            function,
             Function::GmL1GPTDestroy {
                 pa_range_base: 0xabcd_0000,
             }
         );
+        let mut regs2 = [0u64; 4];
+        function.copy_to_array(&mut regs2);
+        assert_eq!(regs, regs2);
     }
 
     #[test]
