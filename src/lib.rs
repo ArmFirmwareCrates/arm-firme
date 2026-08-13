@@ -187,6 +187,8 @@ pub enum FunctionId {
     GmGPISet = 0xC4000402,
     /// FIRME_GM_GPI_OP_CONTINUE function id
     GmGPIOpContinue = 0xC4000412,
+    /// FIRME_GM_L1_GPT_CREATE function id
+    GmL1GPTCreate = 0xC400040E,
 }
 
 /// Enum for representing FIRME requests and their arguments.
@@ -219,6 +221,13 @@ pub enum Function {
         /// continue an incomplete operation.
         cookie: u64,
     },
+    /// FIRME_GM_L1_GPT_CREATE function
+    GmL1GPTCreate {
+        /// Physical base address of a protected address range.
+        pa_range_base: u64,
+        /// Physical base address of the L1 GPT for the specified protected address range.
+        l1_gpt_base: u64,
+    },
 }
 
 impl Function {
@@ -229,6 +238,7 @@ impl Function {
             Function::ServiceFeatures { .. } => FunctionId::ServiceFeatures,
             Function::GmGPISet { .. } => FunctionId::GmGPISet,
             Function::GmGPIOpContinue { .. } => FunctionId::GmGPIOpContinue,
+            Function::GmL1GPTCreate { .. } => FunctionId::GmL1GPTCreate,
         }
     }
 }
@@ -253,6 +263,10 @@ impl TryFrom<&[u64; 4]> for Function {
                 target_gpi: GPIAccessType::try_from(regs[3])?,
             },
             FunctionId::GmGPIOpContinue => Self::GmGPIOpContinue { cookie: regs[1] },
+            FunctionId::GmL1GPTCreate => Self::GmL1GPTCreate {
+                pa_range_base: regs[1],
+                l1_gpt_base: regs[2],
+            },
         };
         Ok(func)
     }
@@ -283,6 +297,8 @@ pub enum Response {
         /// Generic response for all defined return values.
         response: GpiOpContinueStatus,
     },
+    /// FIRME_GM_L1_GPT_CREATE response
+    GmL1GPTCreate,
 }
 
 /// Represents the different statuses `FIRME_GM_GPI_SET` can return
@@ -433,6 +449,14 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
                         })
                     }
                     _ => Err(Error::UnsuccessfulCall(status)),
+                }
+            }
+            FunctionId::GmL1GPTCreate => {
+                let status = StatusCode::try_from(regs[0] as i32)?;
+                if status == StatusCode::Success {
+                    Ok(Self::GmL1GPTCreate)
+                } else {
+                    Err(Error::UnsuccessfulCall(status))
                 }
             }
         }
@@ -810,6 +834,37 @@ mod tests {
         assert_eq!(
             Response::try_from((FunctionId::GmGPIOpContinue, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::NoMemory)),
+        );
+    }
+
+    #[test]
+    fn function_id_gm_l1_gpt_create() {
+        let id = 0x0000_0000_C400_040E;
+        let regs: [u64; 4] = [id, 0xabcd_0000, 0xabcd_ffff, 0];
+
+        assert_eq!(
+            Function::try_from(&regs).unwrap(),
+            Function::GmL1GPTCreate {
+                pa_range_base: 0xabcd_0000,
+                l1_gpt_base: 0xabcd_ffff
+            }
+        );
+    }
+
+    #[test]
+    fn gm_l1_gpt_create_response() {
+        // Successful response
+        let regs: [u64; 4] = [StatusCode::Success as u64, 0, 0, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmL1GPTCreate, &regs)).unwrap(),
+            Response::GmL1GPTCreate,
+        );
+
+        // Unsuccessful response
+        let regs: [u64; 4] = [StatusCode::Denied as u64, 0, 0, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmL1GPTCreate, &regs)),
+            Err(Error::UnsuccessfulCall(StatusCode::Denied)),
         );
     }
 }
