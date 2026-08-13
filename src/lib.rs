@@ -185,6 +185,8 @@ pub enum FunctionId {
     ServiceFeatures = 0xC4000401,
     /// FIRME_GM_GPI_SET function id
     GmGPISet = 0xC4000402,
+    /// FIRME_GM_GPI_OP_CONTINUE function id
+    GmGPIOpContinue = 0xC4000412,
 }
 
 /// Enum for representing FIRME requests and their arguments.
@@ -211,6 +213,12 @@ pub enum Function {
         /// Target GPI
         target_gpi: GPIAccessType,
     },
+    /// FIRME_GM_GPI_OP_CONTINUE function
+    GmGPIOpContinue {
+        /// A value from a previous Granule Management invocation used to identify and
+        /// continue an incomplete operation.
+        cookie: u64,
+    },
 }
 
 impl Function {
@@ -220,6 +228,7 @@ impl Function {
             Function::ServiceVersion { .. } => FunctionId::ServiceVersion,
             Function::ServiceFeatures { .. } => FunctionId::ServiceFeatures,
             Function::GmGPISet { .. } => FunctionId::GmGPISet,
+            Function::GmGPIOpContinue { .. } => FunctionId::GmGPIOpContinue,
         }
     }
 }
@@ -243,6 +252,7 @@ impl TryFrom<&[u64; 4]> for Function {
                 granule_count: regs[2],
                 target_gpi: GPIAccessType::try_from(regs[3])?,
             },
+            FunctionId::GmGPIOpContinue => Self::GmGPIOpContinue { cookie: regs[1] },
         };
         Ok(func)
     }
@@ -268,6 +278,11 @@ pub enum Response {
         /// Generic response for all defined return values.
         response: GpiSetStatus,
     },
+    /// FIRME_GM_GPI_OP_CONTINUE response
+    GmGPIOpContinue {
+        /// Generic response for all defined return values.
+        response: GpiOpContinueStatus,
+    },
 }
 
 /// Represents the different statuses `FIRME_GM_GPI_SET` can return
@@ -290,6 +305,38 @@ pub enum GpiSetStatus {
         cookie: u64,
     },
     /// `FIRME_GM_GPI_SET` ABI returned `Denied`, `OpConflict` or `NotFound` status
+    Error {
+        /// Exact status code of the response
+        status: StatusCode,
+        /// Count of granules starting from the first granule at the Base Address
+        /// whose GPI encoding was changed
+        granule_count: u64,
+    },
+}
+
+/// Represents the different statuses `FIRME_GM_GPI_OP_CONTINUE` can return
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum GpiOpContinueStatus {
+    /// `FIRME_GM_GPI_OP_CONTINUE` ABI completed
+    Complete {
+        /// Count of granules whose GPI encoding was changed in this invocation of
+        /// this ABI.
+        granule_count: u64,
+    },
+    /// `FIRME_GM_GPI_OP_CONTINUE` ABI was partially completed
+    Incomplete {
+        /// Count of granules whose GPI encoding was changed in this invocation of
+        /// this ABI.
+        granule_count: u64,
+        /// Cookie representing the current invocation.
+        cookie: u64,
+    },
+    /// `FIRME_GM_GPI_OP_CONTINUE` returned 'Busy' StatusCode.
+    Busy {
+        /// Cookie representing the current invocation.
+        cookie: u64,
+    },
+    /// `FIRME_GM_GPI_OP_CONTINUE` ABI returned `Denied`, `OpConflict` or `NotFound` status
     Error {
         /// Exact status code of the response
         status: StatusCode,
@@ -346,6 +393,40 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
                     StatusCode::Denied | StatusCode::OpConflict | StatusCode::NotFound => {
                         Ok(Self::GmGPISet {
                             response: GpiSetStatus::Error {
+                                status,
+                                granule_count,
+                            },
+                        })
+                    }
+                    _ => Err(Error::UnsuccessfulCall(status)),
+                }
+            }
+            FunctionId::GmGPIOpContinue => {
+                let status = StatusCode::try_from(regs[0] as i32)?;
+                let granule_count = regs[1];
+
+                match status {
+                    StatusCode::Success => Ok(Self::GmGPIOpContinue {
+                        response: GpiOpContinueStatus::Complete { granule_count },
+                    }),
+                    StatusCode::Incomplete => {
+                        let cookie = regs[2];
+                        Ok(Self::GmGPIOpContinue {
+                            response: GpiOpContinueStatus::Incomplete {
+                                granule_count,
+                                cookie,
+                            },
+                        })
+                    }
+                    StatusCode::Busy => {
+                        let cookie = regs[2];
+                        Ok(Self::GmGPIOpContinue {
+                            response: GpiOpContinueStatus::Busy { cookie },
+                        })
+                    }
+                    StatusCode::OpConflict | StatusCode::NotFound | StatusCode::Denied => {
+                        Ok(Self::GmGPIOpContinue {
+                            response: GpiOpContinueStatus::Error {
                                 status,
                                 granule_count,
                             },
@@ -666,6 +747,69 @@ mod tests {
         assert_eq!(
             Response::try_from((FunctionId::GmGPISet, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::AlreadyExists)),
+        );
+    }
+
+    #[test]
+    fn function_id_gm_gpi_op_continue() {
+        let id = 0x0000_0000_C400_0412;
+        let regs: [u64; 4] = [id, 0x123, 0, 0];
+
+        assert_eq!(
+            Function::try_from(&regs).unwrap(),
+            Function::GmGPIOpContinue { cookie: 0x123 }
+        );
+    }
+
+    #[test]
+    fn gm_gpi_op_continue_response() {
+        // Successful response
+        let regs: [u64; 4] = [StatusCode::Success as u64, 2, 0, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmGPIOpContinue, &regs)).unwrap(),
+            Response::GmGPIOpContinue {
+                response: GpiOpContinueStatus::Complete { granule_count: 2 },
+            }
+        );
+
+        // Incomplete response
+        let regs: [u64; 4] = [StatusCode::Incomplete as u64, 2, 0x123, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmGPIOpContinue, &regs)).unwrap(),
+            Response::GmGPIOpContinue {
+                response: GpiOpContinueStatus::Incomplete {
+                    granule_count: 2,
+                    cookie: 0x123,
+                }
+            }
+        );
+
+        // Busy response
+        let regs: [u64; 4] = [StatusCode::Busy as u64, 2, 0x123, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmGPIOpContinue, &regs)).unwrap(),
+            Response::GmGPIOpContinue {
+                response: GpiOpContinueStatus::Busy { cookie: 0x123 }
+            }
+        );
+
+        // Valid error response
+        let regs: [u64; 4] = [StatusCode::NotFound as u64, 2, 0x123, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmGPIOpContinue, &regs)).unwrap(),
+            Response::GmGPIOpContinue {
+                response: GpiOpContinueStatus::Error {
+                    status: StatusCode::NotFound,
+                    granule_count: 2,
+                }
+            }
+        );
+
+        // Other unexpected error
+        let regs: [u64; 4] = [StatusCode::NoMemory as u64, 2, 0x123, 0];
+        assert_eq!(
+            Response::try_from((FunctionId::GmGPIOpContinue, &regs)),
+            Err(Error::UnsuccessfulCall(StatusCode::NoMemory)),
         );
     }
 }
