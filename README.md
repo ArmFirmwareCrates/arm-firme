@@ -9,12 +9,10 @@ subject to change.*
 
 ## Implemented features
 
-- FIRME_SERVICE_VERSION ABI
-- FIRME_SERVICE_FEATURES ABI
-- FIRME_GM_GPI_SET ABI
-- FIRME_GM_GPI_OP_CONTINUE ABI
-- FIRME_GM_L1_GPT_CREATE ABI
-- FIRME_GM_L1_GPT_DESTROY ABI
+The crate contains serialization and deserialization code for the input and output parameters
+for the following:
+- version and feature discovery ABIs,
+- granule management service ABIs.
 
 ## Future plans
 
