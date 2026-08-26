@@ -98,8 +98,22 @@ pub enum StatusCode {
     BadData = -11,
 }
 
+impl TryFrom<u64> for StatusCode {
+    type Error = Error;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        Self::try_from_primitive(value as i32)
+    }
+}
+
+impl From<StatusCode> for u64 {
+    fn from(value: StatusCode) -> Self {
+        (i32::from(value) as u32).into()
+    }
+}
+
 /// FIRME services
-#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive)]
 #[num_enum(error_type(name = Error, constructor = Error::InvalidServiceId))]
 #[repr(u8)]
 pub enum ServiceId {
@@ -254,17 +268,18 @@ impl Function {
     /// Copy members of `self` into `regs`.
     pub fn copy_to_array(&self, regs: &mut [u64; 4]) {
         regs.fill(0);
-        regs[0] = self.id() as u64;
+        regs[0] = u32::from(self.id()).into();
+
         match *self {
             Self::ServiceVersion { service_id } => {
-                regs[1] = service_id as u64;
+                regs[1] = u8::from(service_id).into();
             }
             Self::ServiceFeatures {
                 service_id,
                 feature_reg_index,
             } => {
-                regs[1] = service_id as u64;
-                regs[2] = feature_reg_index as u64;
+                regs[1] = u8::from(service_id).into();
+                regs[2] = feature_reg_index.into();
             }
             Self::GmGpiSet {
                 base_address,
@@ -273,7 +288,7 @@ impl Function {
             } => {
                 regs[1] = base_address;
                 regs[2] = granule_count;
-                regs[3] = target_gpi as u64;
+                regs[3] = target_gpi.into();
             }
             Self::GmGpiOpContinue { cookie } => {
                 regs[1] = cookie;
@@ -429,19 +444,19 @@ impl Response {
                 regs[0] = u64::from(service_version);
             }
             Self::ServiceFeatures { register } => {
-                regs[0] = StatusCode::Success as u64;
+                regs[0] = StatusCode::Success.into();
                 regs[1] = register.0;
             }
             Self::GmGpiSet { response } => match response {
                 GpiSetStatus::Complete { granule_count } => {
-                    regs[0] = StatusCode::Success as u64;
+                    regs[0] = StatusCode::Success.into();
                     regs[1] = granule_count;
                 }
                 GpiSetStatus::Incomplete {
                     granule_count,
                     cookie,
                 } => {
-                    regs[0] = StatusCode::Incomplete as u64;
+                    regs[0] = StatusCode::Incomplete.into();
                     regs[1] = granule_count;
                     regs[2] = cookie;
                 }
@@ -449,40 +464,40 @@ impl Response {
                     status,
                     granule_count,
                 } => {
-                    regs[0] = status as u64;
+                    regs[0] = status.into();
                     regs[1] = granule_count;
                 }
             },
             Self::GmGpiOpContinue { response } => match response {
                 GpiOpContinueStatus::Complete { granule_count } => {
-                    regs[0] = StatusCode::Success as u64;
+                    regs[0] = StatusCode::Success.into();
                     regs[1] = granule_count;
                 }
                 GpiOpContinueStatus::Incomplete {
                     granule_count,
                     cookie,
                 } => {
-                    regs[0] = StatusCode::Incomplete as u64;
+                    regs[0] = StatusCode::Incomplete.into();
                     regs[1] = granule_count;
                     regs[2] = cookie;
                 }
                 GpiOpContinueStatus::Busy { cookie } => {
-                    regs[0] = StatusCode::Busy as u64;
+                    regs[0] = StatusCode::Busy.into();
                     regs[2] = cookie;
                 }
                 GpiOpContinueStatus::Error {
                     status,
                     granule_count,
                 } => {
-                    regs[0] = status as u64;
+                    regs[0] = status.into();
                     regs[1] = granule_count;
                 }
             },
             Self::GmL1GptCreate => {
-                regs[0] = StatusCode::Success as u64;
+                regs[0] = StatusCode::Success.into();
             }
             Self::GmL1GptDestroy { l1_gpt_base } => {
-                regs[0] = StatusCode::Success as u64;
+                regs[0] = StatusCode::Success.into();
                 regs[2] = l1_gpt_base;
             }
         }
@@ -502,12 +517,12 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
                         service_version: ServiceVersion::try_from(reg)?,
                     })
                 } else {
-                    let status: StatusCode = (regs[0] as i32).try_into()?;
+                    let status: StatusCode = regs[0].try_into()?;
                     Err(Error::UnsuccessfulCall(status))
                 }
             }
             FunctionId::ServiceFeatures => {
-                let status = StatusCode::try_from(regs[0] as i32)?;
+                let status = StatusCode::try_from(regs[0])?;
                 if status == StatusCode::Success {
                     Ok(Self::ServiceFeatures {
                         register: FeatureRegister(regs[1]),
@@ -517,7 +532,7 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
                 }
             }
             FunctionId::GmGpiSet => {
-                let status = StatusCode::try_from(regs[0] as i32)?;
+                let status = StatusCode::try_from(regs[0])?;
                 let granule_count = regs[1];
 
                 match status {
@@ -545,7 +560,7 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
                 }
             }
             FunctionId::GmGpiOpContinue => {
-                let status = StatusCode::try_from(regs[0] as i32)?;
+                let status = StatusCode::try_from(regs[0])?;
                 let granule_count = regs[1];
 
                 match status {
@@ -579,7 +594,7 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
                 }
             }
             FunctionId::GmL1GptCreate => {
-                let status = StatusCode::try_from(regs[0] as i32)?;
+                let status = StatusCode::try_from(regs[0])?;
                 if status == StatusCode::Success {
                     Ok(Self::GmL1GptCreate)
                 } else {
@@ -587,7 +602,7 @@ impl TryFrom<(FunctionId, &[u64; 4])> for Response {
                 }
             }
             FunctionId::GmL1GptDestroy => {
-                let status = StatusCode::try_from(regs[0] as i32)?;
+                let status = StatusCode::try_from(regs[0])?;
                 if status == StatusCode::Success {
                     Ok(Self::GmL1GptDestroy {
                         l1_gpt_base: regs[2],
@@ -651,7 +666,7 @@ impl TryFrom<u64> for GpiAccessType {
 
 impl From<GpiAccessType> for u64 {
     fn from(gpi: GpiAccessType) -> u64 {
-        u8::from(gpi) as u64
+        u8::from(gpi).into()
     }
 }
 
@@ -723,8 +738,7 @@ mod tests {
     #[test]
     fn service_version_response() {
         // Successful response
-        let bits: u64 = ServiceVersion::new(1, 2).into();
-        let regs: [u64; 4] = [bits, 0, 0, 0];
+        let regs: [u64; 4] = [0x0001_0002, 0, 0, 0];
         let response = Response::try_from((FunctionId::ServiceVersion, &regs)).unwrap();
         assert_eq!(
             response,
@@ -737,8 +751,7 @@ mod tests {
         assert_eq!(regs, regs2);
 
         // Unsuccessful response
-        let bits = StatusCode::NotSupported as u64;
-        let regs: [u64; 4] = [bits, 0, 0, 0];
+        let regs: [u64; 4] = [0xffff_ffff, 0, 0, 0];
         assert_eq!(
             Response::try_from((FunctionId::ServiceVersion, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::NotSupported))
@@ -777,15 +790,11 @@ mod tests {
     #[test]
     fn service_features_response() {
         // Successful response
-        let bits: u64 = (BaseServiceFeaturesRegister1::INTEGRATED_DEVICE_MANAGEMENT
-            | BaseServiceFeaturesRegister1::MECID_MANAGEMENT
-            | BaseServiceFeaturesRegister1::GRANULE_MANAGEMENT)
-            .bits();
-        let regs: [u64; 4] = [StatusCode::Success as u64, bits, 0, 0];
+        let regs: [u64; 4] = [0, 0b10101 << 16, 0, 0];
         let resp = Response::try_from((FunctionId::ServiceFeatures, &regs)).unwrap();
         match resp {
             Response::ServiceFeatures { register } => {
-                let base = BaseServiceFeaturesRegister1::try_from(register).unwrap();
+                let base = BaseServiceFeaturesRegister1::from(register);
                 assert!(base.contains(BaseServiceFeaturesRegister1::INTEGRATED_DEVICE_MANAGEMENT));
                 assert!(base.contains(BaseServiceFeaturesRegister1::MECID_MANAGEMENT));
                 assert!(base.contains(BaseServiceFeaturesRegister1::GRANULE_MANAGEMENT));
@@ -798,11 +807,7 @@ mod tests {
         assert_eq!(regs, regs2);
 
         // Unsuccessful response
-        let bits: u64 = (BaseServiceFeaturesRegister1::INTEGRATED_DEVICE_MANAGEMENT
-            | BaseServiceFeaturesRegister1::MECID_MANAGEMENT
-            | BaseServiceFeaturesRegister1::GRANULE_MANAGEMENT)
-            .bits();
-        let regs: [u64; 4] = [StatusCode::NotSupported as u64, bits, 0, 0];
+        let regs: [u64; 4] = [0xffff_ffff, 0b10101 << 16, 0, 0];
         assert_eq!(
             Response::try_from((FunctionId::ServiceFeatures, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::NotSupported)),
@@ -884,7 +889,7 @@ mod tests {
     #[test]
     fn gm_gpi_set_response() {
         // Successful response
-        let regs: [u64; 4] = [StatusCode::Success as u64, 2, 0, 0];
+        let regs: [u64; 4] = [0, 2, 0, 0];
         let response = Response::try_from((FunctionId::GmGpiSet, &regs)).unwrap();
         assert_eq!(
             response,
@@ -898,7 +903,7 @@ mod tests {
         assert_eq!(regs, regs2);
 
         // Incomplete response
-        let regs: [u64; 4] = [StatusCode::Incomplete as u64, 2, 0x123, 0];
+        let regs: [u64; 4] = [0xffff_fffc, 2, 0x123, 0];
         let response = Response::try_from((FunctionId::GmGpiSet, &regs)).unwrap();
         assert_eq!(
             response,
@@ -915,7 +920,7 @@ mod tests {
         assert_eq!(regs, regs2);
 
         // Valid error response
-        let regs: [u64; 4] = [StatusCode::Denied as u64, 2, 0, 0];
+        let regs: [u64; 4] = [0xffff_fffb, 2, 0, 0];
         assert_eq!(
             Response::try_from((FunctionId::GmGpiSet, &regs)).unwrap(),
             Response::GmGpiSet {
@@ -927,7 +932,7 @@ mod tests {
         );
 
         // Other unexpected response
-        let regs: [u64; 4] = [StatusCode::AlreadyExists as u64, 2, 0x123, 0];
+        let regs: [u64; 4] = [0xffff_fff8, 2, 0x123, 0];
         assert_eq!(
             Response::try_from((FunctionId::GmGpiSet, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::AlreadyExists)),
@@ -950,7 +955,7 @@ mod tests {
     #[test]
     fn gm_gpi_op_continue_response() {
         // Successful response
-        let regs: [u64; 4] = [StatusCode::Success as u64, 2, 0, 0];
+        let regs: [u64; 4] = [0, 2, 0, 0];
         let response = Response::try_from((FunctionId::GmGpiOpContinue, &regs)).unwrap();
         assert_eq!(
             response,
@@ -963,7 +968,7 @@ mod tests {
         assert_eq!(regs, regs2);
 
         // Incomplete response
-        let regs: [u64; 4] = [StatusCode::Incomplete as u64, 2, 0x123, 0];
+        let regs: [u64; 4] = [0xffff_fffc, 2, 0x123, 0];
         let response = Response::try_from((FunctionId::GmGpiOpContinue, &regs)).unwrap();
         assert_eq!(
             response,
@@ -979,7 +984,7 @@ mod tests {
         assert_eq!(regs, regs2);
 
         // Busy response
-        let regs: [u64; 4] = [StatusCode::Busy as u64, 2, 0x123, 0];
+        let regs: [u64; 4] = [0xffff_fffa, 2, 0x123, 0];
         let response = Response::try_from((FunctionId::GmGpiOpContinue, &regs)).unwrap();
         assert_eq!(
             response,
@@ -989,7 +994,7 @@ mod tests {
         );
 
         // Valid error response
-        let regs: [u64; 4] = [StatusCode::NotFound as u64, 2, 0, 0];
+        let regs: [u64; 4] = [0xffff_fff7, 2, 0, 0];
         let response = Response::try_from((FunctionId::GmGpiOpContinue, &regs)).unwrap();
         assert_eq!(
             response,
@@ -1005,7 +1010,7 @@ mod tests {
         assert_eq!(regs, regs2);
 
         // Other unexpected error
-        let regs: [u64; 4] = [StatusCode::NoMemory as u64, 2, 0x123, 0];
+        let regs: [u64; 4] = [0xffff_fff6, 2, 0x123, 0];
         assert_eq!(
             Response::try_from((FunctionId::GmGpiOpContinue, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::NoMemory)),
@@ -1033,7 +1038,7 @@ mod tests {
     #[test]
     fn gm_l1_gpt_create_response() {
         // Successful response
-        let regs: [u64; 4] = [StatusCode::Success as u64, 0, 0, 0];
+        let regs: [u64; 4] = [0, 0, 0, 0];
         let response = Response::try_from((FunctionId::GmL1GptCreate, &regs)).unwrap();
         assert_eq!(response, Response::GmL1GptCreate,);
 
@@ -1042,7 +1047,7 @@ mod tests {
         assert_eq!(regs, regs2);
 
         // Unsuccessful response
-        let regs: [u64; 4] = [StatusCode::Denied as u64, 0, 0, 0];
+        let regs: [u64; 4] = [0xffff_fffb, 0, 0, 0];
         assert_eq!(
             Response::try_from((FunctionId::GmL1GptCreate, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::Denied)),
@@ -1069,7 +1074,7 @@ mod tests {
     #[test]
     fn gm_l1_gpt_destroy_response() {
         // Successful response
-        let regs: [u64; 4] = [StatusCode::Success as u64, 0, 0xabcd_ffff, 0];
+        let regs: [u64; 4] = [0, 0, 0xabcd_ffff, 0];
         let response = Response::try_from((FunctionId::GmL1GptDestroy, &regs)).unwrap();
         assert_eq!(
             response,
@@ -1082,7 +1087,7 @@ mod tests {
         assert_eq!(regs, regs2);
 
         // Unsuccessful response
-        let regs: [u64; 4] = [StatusCode::Denied as u64, 0, 0, 0];
+        let regs: [u64; 4] = [0xffff_fffb, 0, 0, 0];
         assert_eq!(
             Response::try_from((FunctionId::GmL1GptDestroy, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::Denied)),
