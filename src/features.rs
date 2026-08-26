@@ -321,7 +321,7 @@ bitflags! {
     /// IDE key management service's feature register 0
     #[repr(transparent)]
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub struct IDEKeyManagementFeaturesRegister0 : u64 {
+    pub struct IdeKeyManagementFeaturesRegister0 : u64 {
         /// KEYSET_POLL bit
         const KEYSET_POLL = 1 << 3;
         /// KEYSET_STOP bit
@@ -333,14 +333,14 @@ bitflags! {
     }
 }
 
-impl From<FeatureRegister> for IDEKeyManagementFeaturesRegister0 {
+impl From<FeatureRegister> for IdeKeyManagementFeaturesRegister0 {
     fn from(value: FeatureRegister) -> Self {
         Self::from_bits_retain(value.0)
     }
 }
 
-impl From<IDEKeyManagementFeaturesRegister0> for FeatureRegister {
-    fn from(value: IDEKeyManagementFeaturesRegister0) -> Self {
+impl From<IdeKeyManagementFeaturesRegister0> for FeatureRegister {
+    fn from(value: IdeKeyManagementFeaturesRegister0) -> Self {
         Self(value.bits())
     }
 }
@@ -349,20 +349,20 @@ bitflags! {
     /// MECID management service's feature register 0
     #[repr(transparent)]
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub struct MECIDManagementFeaturesRegister0 : u64 {
+    pub struct MecidManagementFeaturesRegister0 : u64 {
         /// MEC_REFRESH bit
         const MEC_REFRESH = 1 << 0;
     }
 }
 
-impl From<FeatureRegister> for MECIDManagementFeaturesRegister0 {
+impl From<FeatureRegister> for MecidManagementFeaturesRegister0 {
     fn from(value: FeatureRegister) -> Self {
         Self::from_bits_retain(value.0)
     }
 }
 
-impl From<MECIDManagementFeaturesRegister0> for FeatureRegister {
-    fn from(value: MECIDManagementFeaturesRegister0) -> Self {
+impl From<MecidManagementFeaturesRegister0> for FeatureRegister {
+    fn from(value: MecidManagementFeaturesRegister0) -> Self {
         Self(value.bits())
     }
 }
@@ -376,7 +376,7 @@ pub enum AttestationKeyFormat {
     /// Implementation defined encoding.
     ImpDef = 0b00,
     /// COSE key structure.
-    COSE = 0b01,
+    Cose = 0b01,
 }
 
 bitflags! {
@@ -537,17 +537,17 @@ mod tests {
 
     #[test]
     fn ide_key_management_feat() {
-        let reg0 = IDEKeyManagementFeaturesRegister0::KEYSET_POLL
-            | IDEKeyManagementFeaturesRegister0::KEYSET_STOP
-            | IDEKeyManagementFeaturesRegister0::KEYSET_GO
-            | IDEKeyManagementFeaturesRegister0::KEYSET_PROG;
+        let reg0 = IdeKeyManagementFeaturesRegister0::KEYSET_POLL
+            | IdeKeyManagementFeaturesRegister0::KEYSET_STOP
+            | IdeKeyManagementFeaturesRegister0::KEYSET_GO
+            | IdeKeyManagementFeaturesRegister0::KEYSET_PROG;
         assert_eq!(reg0.bits(), 0x0000_000F);
 
-        let reg1: IDEKeyManagementFeaturesRegister0 = FeatureRegister(reg0.bits()).into();
-        assert!(reg1.contains(IDEKeyManagementFeaturesRegister0::KEYSET_POLL));
-        assert!(reg1.contains(IDEKeyManagementFeaturesRegister0::KEYSET_STOP));
-        assert!(reg1.contains(IDEKeyManagementFeaturesRegister0::KEYSET_GO));
-        assert!(reg1.contains(IDEKeyManagementFeaturesRegister0::KEYSET_PROG));
+        let reg1: IdeKeyManagementFeaturesRegister0 = FeatureRegister(reg0.bits()).into();
+        assert!(reg1.contains(IdeKeyManagementFeaturesRegister0::KEYSET_POLL));
+        assert!(reg1.contains(IdeKeyManagementFeaturesRegister0::KEYSET_STOP));
+        assert!(reg1.contains(IdeKeyManagementFeaturesRegister0::KEYSET_GO));
+        assert!(reg1.contains(IdeKeyManagementFeaturesRegister0::KEYSET_PROG));
     }
 
     #[test]
@@ -654,13 +654,13 @@ mod tests {
         assert!(reg01.contains(AttestationFeaturesRegister0::PAT_GET));
 
         let reg1 = AttestationFeaturesRegister1::RAK_PUB_POR
-            .with_rak_format(AttestationKeyFormat::COSE)
+            .with_rak_format(AttestationKeyFormat::Cose)
             .with_max_pat_ext_buf_pg_cnt(0x02)
             .with_max_pat_pg_cnt(0xAB);
         assert_eq!(reg1.bits(), 0x0000_16AB);
 
         let reg11: AttestationFeaturesRegister1 = FeatureRegister(reg1.bits()).into();
-        assert_eq!(reg11.rak_format(), Ok(AttestationKeyFormat::COSE));
+        assert_eq!(reg11.rak_format(), Ok(AttestationKeyFormat::Cose));
         assert_eq!(reg11.max_pat_ext_buf_pg_cnt(), 0x02);
         assert_eq!(reg11.max_pat_pg_cnt(), 0xAB);
     }
@@ -681,7 +681,7 @@ mod tests {
 
     #[test]
     fn mecid_feat() {
-        let reg0 = MECIDManagementFeaturesRegister0::MEC_REFRESH;
+        let reg0 = MecidManagementFeaturesRegister0::MEC_REFRESH;
         assert_eq!(reg0.bits(), 0x0000_0001);
     }
 }
