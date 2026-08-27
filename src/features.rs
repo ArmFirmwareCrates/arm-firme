@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright The arm-firme Contributors.
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+//! Feature discovery
+
 use crate::Error;
 use bitflags::bitflags;
 use num_enum::{IntoPrimitive, TryFromPrimitive};

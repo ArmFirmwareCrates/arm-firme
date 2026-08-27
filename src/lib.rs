@@ -7,7 +7,6 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(missing_docs)]
 
-/// Feature discovery
 pub mod features;
 
 use crate::features::FeatureRegister;
@@ -84,8 +83,8 @@ pub enum StatusCode {
     /// Another operation in progress
     #[error("another operation in progress")]
     OpConflict = -7,
-    /// Operation attemps to create an object that already exists.
-    #[error("operation attemps to create an object that already exists")]
+    /// Operation attempts to create an object that already exists.
+    #[error("operation attempts to create an object that already exists")]
     AlreadyExists = -8,
     /// An object required to complete the requested operation does not exist.
     #[error("an object required to complete the requested operation does not exist")]
