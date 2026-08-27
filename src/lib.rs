@@ -112,6 +112,18 @@ impl From<StatusCode> for u64 {
     }
 }
 
+impl From<Error> for StatusCode {
+    fn from(value: Error) -> Self {
+        match value {
+            Error::UnrecognisedFunctionId(_)
+            | Error::InvalidServiceId(_)
+            | Error::InvalidFeatureIndex(_) => Self::NotSupported,
+            Error::UnsuccessfulCall(status) => status,
+            _ => Self::InvalidParameters,
+        }
+    }
+}
+
 /// FIRME services
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive)]
 #[num_enum(error_type(name = Error, constructor = Error::InvalidServiceId))]
