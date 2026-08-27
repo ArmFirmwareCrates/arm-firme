@@ -723,12 +723,16 @@ mod tests {
     fn function_id_service_version() {
         let service_version = 0x0000_0000_C400_0400;
         let regs: [u64; 4] = [service_version, 1, 0, 0];
+        let function = Function::try_from(&regs).unwrap();
         assert_eq!(
-            Function::try_from(&regs).unwrap(),
+            function,
             Function::ServiceVersion {
                 service_id: ServiceId::GranuleManagement
             }
         );
+        let mut regs2 = [u64::MAX; 4];
+        function.copy_to_array(&mut regs2);
+        assert_eq!(regs, regs2);
 
         // out-of-range ServiceId getting truncated to an invalid value
         let regs: [u64; 4] = [service_version, 0xFFFF, 0, 0];
@@ -758,7 +762,7 @@ mod tests {
                 service_version: ServiceVersion { major: 1, minor: 2 }
             }
         );
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         response.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
 
@@ -774,13 +778,17 @@ mod tests {
     fn function_id_service_features() {
         let service_features = 0x0000_0000_C400_0401;
         let regs: [u64; 4] = [service_features, 1, 0, 0];
+        let function = Function::try_from(&regs).unwrap();
         assert_eq!(
-            Function::try_from(&regs).unwrap(),
+            function,
             Function::ServiceFeatures {
                 service_id: ServiceId::GranuleManagement,
                 feature_reg_index: 0,
             }
         );
+        let mut regs2 = [u64::MAX; 4];
+        function.copy_to_array(&mut regs2);
+        assert_eq!(regs, regs2);
         let regs: [u64; 4] = [service_features, 5, 1, 0];
         assert_eq!(
             Function::try_from(&regs).unwrap(),
@@ -796,6 +804,18 @@ mod tests {
                 service_id: ServiceId::MecidManagement,
                 feature_reg_index: 0xFF,
             }
+        );
+
+        let regs = [service_features, 6, 0, 0];
+        assert_eq!(Function::try_from(&regs), Err(Error::InvalidServiceId(6)));
+    }
+
+    #[test]
+    fn invalid_function_id() {
+        let regs = [0, 0, 0, 0];
+        assert_eq!(
+            Function::try_from(&regs),
+            Err(Error::UnrecognisedFunctionId(0))
         );
     }
 
@@ -814,7 +834,7 @@ mod tests {
             _ => panic!(),
         }
 
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         resp.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
 
@@ -893,9 +913,12 @@ mod tests {
             }
         );
 
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         function.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
+
+        let regs = [gpi_set, 0, 0, 1];
+        assert_eq!(Function::try_from(&regs), Err(Error::InvalidGpiEncoding(1)));
     }
 
     #[test]
@@ -910,7 +933,7 @@ mod tests {
             }
         );
 
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         response.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
 
@@ -927,21 +950,31 @@ mod tests {
             }
         );
 
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         response.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
 
-        // Valid error response
-        let regs: [u64; 4] = [0xffff_fffb, 2, 0, 0];
-        assert_eq!(
-            Response::try_from((FunctionId::GmGpiSet, &regs)).unwrap(),
-            Response::GmGpiSet {
-                response: GpiSetStatus::Error {
-                    status: StatusCode::Denied,
-                    granule_count: 2
+        // Valid error responses
+        for status in [
+            StatusCode::Denied,
+            StatusCode::OpConflict,
+            StatusCode::NotFound,
+        ] {
+            let regs: [u64; 4] = [status.into(), 2, 0, 0];
+            let response = Response::try_from((FunctionId::GmGpiSet, &regs)).unwrap();
+            assert_eq!(
+                response,
+                Response::GmGpiSet {
+                    response: GpiSetStatus::Error {
+                        status,
+                        granule_count: 2
+                    }
                 }
-            }
-        );
+            );
+            let mut regs2 = [u64::MAX; 4];
+            response.copy_to_array(&mut regs2);
+            assert_eq!(regs, regs2);
+        }
 
         // Other unexpected response
         let regs: [u64; 4] = [0xffff_fff8, 2, 0x123, 0];
@@ -959,7 +992,7 @@ mod tests {
         let function = Function::try_from(&regs).unwrap();
         assert_eq!(function, Function::GmGpiOpContinue { cookie: 0x123 });
 
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         function.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
     }
@@ -975,7 +1008,7 @@ mod tests {
                 response: GpiOpContinueStatus::Complete { granule_count: 2 },
             }
         );
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         response.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
 
@@ -991,12 +1024,12 @@ mod tests {
                 }
             }
         );
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         response.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
 
         // Busy response
-        let regs: [u64; 4] = [0xffff_fffa, 2, 0x123, 0];
+        let regs: [u64; 4] = [0xffff_fffa, 0, 0x123, 0];
         let response = Response::try_from((FunctionId::GmGpiOpContinue, &regs)).unwrap();
         assert_eq!(
             response,
@@ -1004,22 +1037,31 @@ mod tests {
                 response: GpiOpContinueStatus::Busy { cookie: 0x123 }
             }
         );
-
-        // Valid error response
-        let regs: [u64; 4] = [0xffff_fff7, 2, 0, 0];
-        let response = Response::try_from((FunctionId::GmGpiOpContinue, &regs)).unwrap();
-        assert_eq!(
-            response,
-            Response::GmGpiOpContinue {
-                response: GpiOpContinueStatus::Error {
-                    status: StatusCode::NotFound,
-                    granule_count: 2,
-                }
-            }
-        );
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         response.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
+
+        // Valid error responses
+        for status in [
+            StatusCode::Denied,
+            StatusCode::OpConflict,
+            StatusCode::NotFound,
+        ] {
+            let regs: [u64; 4] = [status.into(), 2, 0, 0];
+            let response = Response::try_from((FunctionId::GmGpiOpContinue, &regs)).unwrap();
+            assert_eq!(
+                response,
+                Response::GmGpiOpContinue {
+                    response: GpiOpContinueStatus::Error {
+                        status,
+                        granule_count: 2,
+                    }
+                }
+            );
+            let mut regs2 = [u64::MAX; 4];
+            response.copy_to_array(&mut regs2);
+            assert_eq!(regs, regs2);
+        }
 
         // Other unexpected error
         let regs: [u64; 4] = [0xffff_fff6, 2, 0x123, 0];
@@ -1042,7 +1084,7 @@ mod tests {
                 l1_gpt_base: 0xabcd_ffff
             }
         );
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         function.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
     }
@@ -1054,7 +1096,7 @@ mod tests {
         let response = Response::try_from((FunctionId::GmL1GptCreate, &regs)).unwrap();
         assert_eq!(response, Response::GmL1GptCreate,);
 
-        let mut regs2 = [0u64, 0u64, 0u64, 0u64];
+        let mut regs2 = [u64::MAX; 4];
         response.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
 
@@ -1078,7 +1120,7 @@ mod tests {
                 pa_range_base: 0xabcd_0000,
             }
         );
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         function.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
     }
@@ -1094,7 +1136,7 @@ mod tests {
                 l1_gpt_base: 0xabcd_ffff,
             },
         );
-        let mut regs2 = [0u64; 4];
+        let mut regs2 = [u64::MAX; 4];
         response.copy_to_array(&mut regs2);
         assert_eq!(regs, regs2);
 
