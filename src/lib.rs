@@ -513,6 +513,12 @@ impl Response {
             }
         }
     }
+
+    /// Copy `status` into `regs`.
+    pub fn copy_status_to_array(status: StatusCode, regs: &mut [u64; 4]) {
+        regs.fill(0);
+        regs[0] = u64::from(status);
+    }
 }
 
 impl TryFrom<(FunctionId, &[u64; 4])> for Response {
@@ -811,11 +817,13 @@ mod tests {
 
     #[test]
     fn invalid_function_id() {
-        let regs = [0, 0, 0, 0];
-        assert_eq!(
-            Function::try_from(&regs),
-            Err(Error::UnrecognisedFunctionId(0))
-        );
+        let mut regs = [0, 0, 0, 0];
+        let err = Function::try_from(&regs).err().unwrap();
+        assert_eq!(err, Error::UnrecognisedFunctionId(0));
+        let status: StatusCode = err.into();
+        assert_eq!(status, StatusCode::NotSupported);
+        Response::copy_status_to_array(status, &mut regs);
+        assert_eq!(regs, [0xffff_ffff, 0, 0, 0]);
     }
 
     #[test]
