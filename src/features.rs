@@ -157,6 +157,22 @@ pub enum PhysicalGranuleSize {
     KB16 = 0b10,
 }
 
+impl PhysicalGranuleSize {
+    /// Returns the corresponding address width.
+    pub fn width(&self) -> usize {
+        match self {
+            Self::KB4 => 12,
+            Self::KB16 => 14,
+            Self::KB64 => 16,
+        }
+    }
+
+    /// Physical Granule Size in bytes.
+    pub fn size(&self) -> usize {
+        0x1 << self.width()
+    }
+}
+
 /// Level 0 GPT Size
 ///
 /// Size of the memory corresponding to one L0 GPT entry as encoded in the GPCCR_EL3.L0GPTSZ field.
@@ -172,6 +188,23 @@ pub enum Level0GptSize {
     GB64 = 0b0110,
     /// 512GB
     GB512 = 0b1001,
+}
+
+impl Level0GptSize {
+    /// Returns the corresponding address width.
+    pub fn width(&self) -> usize {
+        match self {
+            Self::GB1 => 30,
+            Self::GB16 => 34,
+            Self::GB64 => 36,
+            Self::GB512 => 39,
+        }
+    }
+
+    /// Level 0 GPT size in bytes.
+    pub fn size(&self) -> usize {
+        0x1 << self.width()
+    }
 }
 
 /// Protected Physical Address Size.
@@ -195,6 +228,26 @@ pub enum ProtectedPhysicalAddressSize {
     TB256 = 0b101,
     /// 4PB
     PB4 = 0b110,
+}
+
+impl ProtectedPhysicalAddressSize {
+    /// Returns the corresponding address width.
+    pub fn width(&self) -> usize {
+        match self {
+            Self::GB4 => 32,
+            Self::GB64 => 36,
+            Self::TB1 => 40,
+            Self::TB4 => 42,
+            Self::TB16 => 44,
+            Self::TB256 => 48,
+            Self::PB4 => 52,
+        }
+    }
+
+    /// Protected Physical Address Size in bytes.
+    pub fn size(&self) -> usize {
+        0x1 << self.width()
+    }
 }
 
 bitflags! {
