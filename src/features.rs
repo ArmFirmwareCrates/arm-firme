@@ -5,6 +5,7 @@
 
 use crate::Error;
 use bitflags::bitflags;
+use core::cmp::Ordering;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 /// Generic feature register wrapper type
@@ -13,7 +14,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 pub struct FeatureRegister(pub(crate) u64);
 
 /// Minimum shared buffer size
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, TryFromPrimitive, IntoPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[num_enum(error_type(name = Error, constructor = Error::InvalidSharedBufferMinSize))]
 #[repr(u8)]
 pub enum SharedBufferMinSize {
@@ -33,6 +34,18 @@ impl SharedBufferMinSize {
             Self::KB64 => 64,
             Self::KB16 => 16,
         }
+    }
+}
+
+impl Ord for SharedBufferMinSize {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.size_kb().cmp(&other.size_kb())
+    }
+}
+
+impl PartialOrd for SharedBufferMinSize {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -145,7 +158,7 @@ impl BaseServiceFeaturesRegister1 {
 }
 
 /// Physical Granule size as encoded in the GPCCR_EL3.PGS field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, TryFromPrimitive, IntoPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[num_enum(error_type(name = Error, constructor = Error::InvalidPhysicalGranuleSize))]
 #[repr(u8)]
 pub enum PhysicalGranuleSize {
@@ -170,6 +183,18 @@ impl PhysicalGranuleSize {
     /// Physical Granule Size in bytes.
     pub fn size(&self) -> usize {
         0x1 << self.width()
+    }
+}
+
+impl Ord for PhysicalGranuleSize {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.width().cmp(&other.width())
+    }
+}
+
+impl PartialOrd for PhysicalGranuleSize {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
