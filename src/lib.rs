@@ -52,6 +52,9 @@ pub enum Error {
     /// Invalid GPI encoding
     #[error("invalid GpiAccessType encoding {0}")]
     InvalidGpiEncoding(u8),
+    /// Invalid PAR state
+    #[error("invalid PAR state {0}")]
+    InvalidParState(u64),
 }
 
 /// Error status codes
@@ -213,6 +216,8 @@ pub enum FunctionId {
     GmGpiSet = 0xC4000402,
     /// FIRME_GM_GPI_OP_CONTINUE function id
     GmGpiOpContinue = 0xC4000412,
+    /// FIRME_GM_GPT_INFO function id
+    GmGptInfo = 0xC4000413,
     /// FIRME_GM_L1_GPT_CREATE function id
     GmL1GptCreate = 0xC400040E,
     /// FIRME_GM_L1_GPT_DESTROY function id
@@ -249,6 +254,13 @@ pub enum Function {
         /// continue an incomplete operation.
         cookie: u64,
     },
+    /// FIRME_GM_GPT_INFO function
+    GmGptInfo {
+        /// 64-bit inclusive physical base address of a range of protected address ranges
+        pa_range_base: u64,
+        /// 64-bit exclusive physical top address of a range of protected address ranges
+        pa_range_top: u64,
+    },
     /// FIRME_GM_L1_GPT_CREATE function
     GmL1GptCreate {
         /// Physical base address of a protected address range.
@@ -271,6 +283,7 @@ impl Function {
             Function::ServiceFeatures { .. } => FunctionId::ServiceFeatures,
             Function::GmGpiSet { .. } => FunctionId::GmGpiSet,
             Function::GmGpiOpContinue { .. } => FunctionId::GmGpiOpContinue,
+            Function::GmGptInfo { .. } => FunctionId::GmGptInfo,
             Function::GmL1GptCreate { .. } => FunctionId::GmL1GptCreate,
             Function::GmL1GptDestroy { .. } => FunctionId::GmL1GptDestroy,
         }
@@ -303,6 +316,13 @@ impl Function {
             }
             Self::GmGpiOpContinue { cookie } => {
                 regs[1] = cookie;
+            }
+            Self::GmGptInfo {
+                pa_range_base,
+                pa_range_top,
+            } => {
+                regs[1] = pa_range_base;
+                regs[2] = pa_range_top;
             }
             Self::GmL1GptCreate {
                 pa_range_base,
@@ -338,6 +358,10 @@ impl TryFrom<&[u64; 18]> for Function {
                 target_gpi: GpiAccessType::try_from(regs[3])?,
             },
             FunctionId::GmGpiOpContinue => Self::GmGpiOpContinue { cookie: regs[1] },
+            FunctionId::GmGptInfo => Self::GmGptInfo {
+                pa_range_base: regs[1],
+                pa_range_top: regs[2],
+            },
             FunctionId::GmL1GptCreate => Self::GmL1GptCreate {
                 pa_range_base: regs[1],
                 l1_gpt_base: regs[2],
@@ -374,6 +398,13 @@ pub enum Response {
     GmGpiOpContinue {
         /// Generic response for all defined return values.
         response: GpiOpContinueStatus,
+    },
+    /// FIRME_GM_GPT_INFO response
+    GmGptInfo {
+        /// 64-bit exclusive physical top address of a non-empty prefix of the input PA range.
+        pa_range_top: u64,
+        /// State observed for each protected address range in the returned prefix.
+        par_state: ParState,
     },
     /// FIRME_GM_L1_GPT_CREATE response
     GmL1GptCreate,
@@ -504,6 +535,14 @@ impl Response {
                     regs[1] = granule_count;
                 }
             },
+            Self::GmGptInfo {
+                pa_range_top,
+                par_state,
+            } => {
+                regs[0] = StatusCode::Success.into();
+                regs[1] = pa_range_top;
+                regs[2] = par_state.into();
+            }
             Self::GmL1GptCreate => {
                 regs[0] = StatusCode::Success.into();
             }
@@ -610,6 +649,17 @@ impl TryFrom<(FunctionId, &[u64; 18])> for Response {
                     _ => Err(Error::UnsuccessfulCall(status)),
                 }
             }
+            FunctionId::GmGptInfo => {
+                let status = StatusCode::try_from(regs[0])?;
+                if status == StatusCode::Success {
+                    Ok(Self::GmGptInfo {
+                        pa_range_top: regs[1],
+                        par_state: regs[2].try_into()?,
+                    })
+                } else {
+                    Err(Error::UnsuccessfulCall(status))
+                }
+            }
             FunctionId::GmL1GptCreate => {
                 let status = StatusCode::try_from(regs[0])?;
                 if status == StatusCode::Success {
@@ -685,6 +735,24 @@ impl From<GpiAccessType> for u64 {
     fn from(gpi: GpiAccessType) -> u64 {
         u8::from(gpi).into()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
+#[num_enum(error_type(name = Error, constructor = Error::InvalidParState))]
+#[repr(u64)]
+/// Describes the protected address range state.
+pub enum ParState {
+    /// The protected address range is EL3 firmware-managed and is described by an L0 GPT Block
+    /// descriptor.
+    El3Block = 0,
+    /// The protected address range is EL3 firmware-managed and is described by an L0 GPT Table
+    /// descriptor that refers to an L1 GPT object.
+    El3Table = 1,
+    /// The protected address range is Host-managed and is described by an L0 GPT Block descriptor.
+    HostBlock = 2,
+    /// The protected address range is Host-managed and is described by an L0 GPT Table descriptor
+    /// that refers to an L1 GPT object.
+    HostTable = 3,
 }
 
 #[cfg(test)]
@@ -1207,6 +1275,53 @@ mod tests {
         regs[0] = 0xffff_fffb;
         assert_eq!(
             Response::try_from((FunctionId::GmL1GptDestroy, &regs)),
+            Err(Error::UnsuccessfulCall(StatusCode::Denied)),
+        );
+    }
+
+    #[test]
+    fn function_id_gm_gpt_info() {
+        let mut regs: [u64; 18] = [0; 18];
+        regs[0] = 0x0000_0000_C400_0413;
+        regs[1] = 0xabcd_0000;
+        regs[2] = 0xabcd_ffff;
+
+        let function = Function::try_from(&regs).unwrap();
+        assert_eq!(
+            function,
+            Function::GmGptInfo {
+                pa_range_base: 0xabcd_0000,
+                pa_range_top: 0xabcd_ffff,
+            }
+        );
+        let mut regs2 = [u64::MAX; 18];
+        function.copy_to_array(&mut regs2);
+        assert_eq!(regs, regs2);
+    }
+
+    #[test]
+    fn gm_gpt_info_response() {
+        // Successful response
+        let mut regs: [u64; 18] = [0; 18];
+        regs[1] = 0xabcd_ffff;
+        regs[2] = 0x1;
+        let response = Response::try_from((FunctionId::GmGptInfo, &regs)).unwrap();
+        assert_eq!(
+            response,
+            Response::GmGptInfo {
+                pa_range_top: 0xabcd_ffff,
+                par_state: ParState::El3Table,
+            },
+        );
+        let mut regs2 = [u64::MAX; 18];
+        response.copy_to_array(&mut regs2);
+        assert_eq!(regs, regs2);
+
+        // Unsuccessful response
+        let mut regs: [u64; 18] = [0; 18];
+        regs[0] = 0xffff_fffb;
+        assert_eq!(
+            Response::try_from((FunctionId::GmGptInfo, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::Denied)),
         );
     }

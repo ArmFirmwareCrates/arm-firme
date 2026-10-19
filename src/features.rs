@@ -280,6 +280,8 @@ bitflags! {
     #[repr(transparent)]
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     pub struct GranuleManagementFeaturesRegister0 : u64 {
+        /// GPT_INFO bit
+        const GPT_INFO = 1 << 4;
         /// L1_GPT_DESTROY bit
         const L1_GPT_DESTROY = 1 << 3;
         /// L1_GPT_CREATE bit
