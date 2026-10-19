@@ -325,12 +325,34 @@ impl From<GranuleManagementFeaturesRegister1> for FeatureRegister {
 }
 
 impl GranuleManagementFeaturesRegister1 {
+    const MAX_CONCURRENT_CNT_SHIFT: u32 = 9;
+    const MAX_CONCURRENT_CNT_MASK: u64 = 0b1111_1111_1111_1111;
     const PPS_SHIFT: u32 = 6;
     const PPS_MASK: u64 = 0b111;
     const L0GPTSZ_SHIFT: u32 = 2;
     const L0GPTSZ_MASK: u64 = 0b1111;
     const PGS_SHIFT: u32 = 0;
     const PGS_MASK: u64 = 0b11;
+
+    /// Returns the Granule Management Service's maximum concurrent operation count
+    pub fn max_concurrent_op_count(&self) -> u64 {
+        (self.bits() >> Self::MAX_CONCURRENT_CNT_SHIFT) & Self::MAX_CONCURRENT_CNT_MASK
+    }
+
+    /// Sets the Granule Management Service's maximum concurrent operation count
+    pub fn set_max_concurrent_op_count(&mut self, value: u64) {
+        assert!(value & Self::MAX_CONCURRENT_CNT_MASK == value);
+        let offset = Self::MAX_CONCURRENT_CNT_SHIFT;
+        *self = Self::from_bits_retain(
+            (self.bits() & !(Self::MAX_CONCURRENT_CNT_MASK << offset)) | (value << offset),
+        );
+    }
+
+    /// Sets the Granule Management Service's maximum concurrent operation count
+    pub fn with_max_concurrent_op_count(mut self, value: u64) -> Self {
+        self.set_max_concurrent_op_count(value);
+        self
+    }
 
     /// Return the Granule Protection Table's protected physical address size.
     pub fn protected_physical_address_size(&self) -> Result<ProtectedPhysicalAddressSize, Error> {
@@ -428,6 +450,50 @@ impl From<IdeKeyManagementFeaturesRegister0> for FeatureRegister {
 }
 
 bitflags! {
+    /// Feature register 1 for the IDE key management service
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    #[repr(transparent)]
+    pub struct IdeKeyManagementFeaturesRegister1 : u64 {}
+}
+
+impl IdeKeyManagementFeaturesRegister1 {
+    const MAX_CONCURRENT_CNT_SHIFT: u32 = 0;
+    const MAX_CONCURRENT_CNT_MASK: u64 = 0b1111_1111_1111_1111;
+
+    /// Returns the IDE key management service's maximum concurrent operation count
+    pub fn max_concurrent_op_count(&self) -> u64 {
+        (self.bits() >> Self::MAX_CONCURRENT_CNT_SHIFT) & Self::MAX_CONCURRENT_CNT_MASK
+    }
+
+    /// Sets the IDE key management service's maximum concurrent operation count
+    pub fn set_max_concurrent_op_count(&mut self, value: u64) {
+        assert!(value & Self::MAX_CONCURRENT_CNT_MASK == value);
+        let offset = Self::MAX_CONCURRENT_CNT_SHIFT;
+        *self = Self::from_bits_retain(
+            (self.bits() & !(Self::MAX_CONCURRENT_CNT_MASK << offset)) | (value << offset),
+        );
+    }
+
+    /// Sets the IDE key management service's maximum concurrent operation count
+    pub fn with_max_concurrent_op_count(mut self, value: u64) -> Self {
+        self.set_max_concurrent_op_count(value);
+        self
+    }
+}
+
+impl From<FeatureRegister> for IdeKeyManagementFeaturesRegister1 {
+    fn from(value: FeatureRegister) -> Self {
+        Self::from_bits_retain(value.0)
+    }
+}
+
+impl From<IdeKeyManagementFeaturesRegister1> for FeatureRegister {
+    fn from(value: IdeKeyManagementFeaturesRegister1) -> Self {
+        Self(value.bits())
+    }
+}
+
+bitflags! {
     /// MECID management service's feature register 0
     #[repr(transparent)]
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -457,6 +523,8 @@ bitflags! {
 }
 
 impl MecidManagementFeaturesRegister1 {
+    const MAX_CONCURRENT_CNT_SHIFT: u32 = 4;
+    const MAX_CONCURRENT_CNT_MASK: u64 = 0b1111_1111_1111_1111;
     const COMMON_MECID_WIDTH_SHIFT: u32 = 0;
     const COMMON_MECID_WIDTH_MASK: u64 = 0b1111;
 
@@ -477,6 +545,26 @@ impl MecidManagementFeaturesRegister1 {
     /// Sets the COMMON_MECID_WIDTH field
     pub fn with_common_mecid_width(mut self, value: u64) -> Self {
         self.set_common_mecid_width(value);
+        self
+    }
+
+    /// Returns the MECID management service's maximum concurrent operation count
+    pub fn max_concurrent_op_count(&self) -> u64 {
+        (self.bits() >> Self::MAX_CONCURRENT_CNT_SHIFT) & Self::MAX_CONCURRENT_CNT_MASK
+    }
+
+    /// Sets the MECID management service's maximum concurrent operation count
+    pub fn set_max_concurrent_op_count(&mut self, value: u64) {
+        assert!(value & Self::MAX_CONCURRENT_CNT_MASK == value);
+        let offset = Self::MAX_CONCURRENT_CNT_SHIFT;
+        *self = Self::from_bits_retain(
+            (self.bits() & !(Self::MAX_CONCURRENT_CNT_MASK << offset)) | (value << offset),
+        );
+    }
+
+    /// Sets the MECID management service's maximum concurrent operation count
+    pub fn with_max_concurrent_op_count(mut self, value: u64) -> Self {
+        self.set_max_concurrent_op_count(value);
         self
     }
 }
@@ -560,6 +648,8 @@ impl From<AttestationFeaturesRegister1> for FeatureRegister {
 }
 
 impl AttestationFeaturesRegister1 {
+    const MAX_CONCURRENT_CNT_SHIFT: u32 = 13;
+    const MAX_CONCURRENT_CNT_MASK: u64 = 0b1111_1111_1111_1111;
     const RAK_FORMAT_SHIFT: u32 = 10;
     const RAK_FORMAT_MASK: u64 = 0b11;
     const MAX_PAT_EXT_BUF_PG_CNT_SHIFT: u32 = 8;
@@ -630,6 +720,26 @@ impl AttestationFeaturesRegister1 {
         self.set_max_pat_pg_cnt(value);
         self
     }
+
+    /// Returns the Attestation service's maximum concurrent operation count
+    pub fn max_concurrent_op_count(&self) -> u64 {
+        (self.bits() >> Self::MAX_CONCURRENT_CNT_SHIFT) & Self::MAX_CONCURRENT_CNT_MASK
+    }
+
+    /// Sets the Attestation service's maximum concurrent operation count
+    pub fn set_max_concurrent_op_count(&mut self, value: u64) {
+        assert!(value & Self::MAX_CONCURRENT_CNT_MASK == value);
+        let offset = Self::MAX_CONCURRENT_CNT_SHIFT;
+        *self = Self::from_bits_retain(
+            (self.bits() & !(Self::MAX_CONCURRENT_CNT_MASK << offset)) | (value << offset),
+        );
+    }
+
+    /// Sets the Attestation service's maximum concurrent operation count
+    pub fn with_max_concurrent_op_count(mut self, value: u64) -> Self {
+        self.set_max_concurrent_op_count(value);
+        self
+    }
 }
 
 bitflags! {
@@ -656,6 +766,50 @@ impl From<IntegratedDeviceManagementFeaturesRegister0> for FeatureRegister {
     }
 }
 
+bitflags! {
+    /// Integrated device management service's feature register 1
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    #[repr(transparent)]
+    pub struct IntegratedDeviceManagementFeaturesRegister1 : u64 {}
+}
+
+impl IntegratedDeviceManagementFeaturesRegister1 {
+    const MAX_CONCURRENT_CNT_SHIFT: u32 = 0;
+    const MAX_CONCURRENT_CNT_MASK: u64 = 0b1111_1111_1111_1111;
+
+    /// Returns the integrated device management service's maximum concurrent operation count.
+    pub fn max_concurrent_op_count(&self) -> u64 {
+        (self.bits() >> Self::MAX_CONCURRENT_CNT_SHIFT) & Self::MAX_CONCURRENT_CNT_MASK
+    }
+
+    /// Sets the integrated device management service's maximum concurrent operation count
+    pub fn set_max_concurrent_op_count(&mut self, value: u64) {
+        assert!(value & Self::MAX_CONCURRENT_CNT_MASK == value);
+        let offset = Self::MAX_CONCURRENT_CNT_SHIFT;
+        *self = Self::from_bits_retain(
+            (self.bits() & !(Self::MAX_CONCURRENT_CNT_MASK << offset)) | (value << offset),
+        );
+    }
+
+    /// Sets the integrated device management service's maximum concurrent operation count
+    pub fn with_max_concurrent_op_count(mut self, value: u64) -> Self {
+        self.set_max_concurrent_op_count(value);
+        self
+    }
+}
+
+impl From<FeatureRegister> for IntegratedDeviceManagementFeaturesRegister1 {
+    fn from(value: FeatureRegister) -> Self {
+        Self::from_bits_retain(value.0)
+    }
+}
+
+impl From<IntegratedDeviceManagementFeaturesRegister1> for FeatureRegister {
+    fn from(value: IntegratedDeviceManagementFeaturesRegister1) -> Self {
+        Self(value.bits())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,11 +823,16 @@ mod tests {
             | IdeKeyManagementFeaturesRegister0::KEYSET_PROG;
         assert_eq!(reg0.bits(), 0x0000_000F);
 
-        let reg1: IdeKeyManagementFeaturesRegister0 = FeatureRegister(reg0.bits()).into();
-        assert!(reg1.contains(IdeKeyManagementFeaturesRegister0::KEYSET_POLL));
-        assert!(reg1.contains(IdeKeyManagementFeaturesRegister0::KEYSET_STOP));
-        assert!(reg1.contains(IdeKeyManagementFeaturesRegister0::KEYSET_GO));
-        assert!(reg1.contains(IdeKeyManagementFeaturesRegister0::KEYSET_PROG));
+        let reg01: IdeKeyManagementFeaturesRegister0 = FeatureRegister(reg0.bits()).into();
+        assert!(reg01.contains(IdeKeyManagementFeaturesRegister0::KEYSET_POLL));
+        assert!(reg01.contains(IdeKeyManagementFeaturesRegister0::KEYSET_STOP));
+        assert!(reg01.contains(IdeKeyManagementFeaturesRegister0::KEYSET_GO));
+        assert!(reg01.contains(IdeKeyManagementFeaturesRegister0::KEYSET_PROG));
+
+        let reg1 = IdeKeyManagementFeaturesRegister1::empty().with_max_concurrent_op_count(0xabcd);
+        assert_eq!(reg1.bits(), 0x0000_abcd);
+        let reg11: IdeKeyManagementFeaturesRegister1 = FeatureRegister(reg1.bits()).into();
+        assert_eq!(reg11.max_concurrent_op_count(), 0xabcd);
     }
 
     #[test]
@@ -691,8 +850,9 @@ mod tests {
         let reg1 = GranuleManagementFeaturesRegister1::empty()
             .with_protected_physical_address_size(ProtectedPhysicalAddressSize::TB4)
             .with_level0_gpt_size(Level0GptSize::GB64)
-            .with_physical_granule_size(PhysicalGranuleSize::KB16);
-        assert_eq!(reg1.bits(), 0x0000_00DA);
+            .with_physical_granule_size(PhysicalGranuleSize::KB16)
+            .with_max_concurrent_op_count(128);
+        assert_eq!(reg1.bits(), 0x0001_00DA);
 
         let reg11: GranuleManagementFeaturesRegister1 = FeatureRegister(reg1.bits()).into();
         assert_eq!(
@@ -701,6 +861,7 @@ mod tests {
         );
         assert_eq!(reg11.level0_gpt_size(), Ok(Level0GptSize::GB64));
         assert_eq!(reg11.physical_granule_size(), Ok(PhysicalGranuleSize::KB16));
+        assert_eq!(reg11.max_concurrent_op_count(), 128);
     }
 
     #[test]
@@ -780,15 +941,17 @@ mod tests {
         assert!(reg01.contains(AttestationFeaturesRegister0::PAT_GET));
 
         let reg1 = AttestationFeaturesRegister1::RAK_PUB_POR
+            .with_max_concurrent_op_count(0xDCBA)
             .with_rak_format(AttestationKeyFormat::Cose)
             .with_max_pat_ext_buf_pg_cnt(0x02)
             .with_max_pat_pg_cnt(0xAB);
-        assert_eq!(reg1.bits(), 0x0000_16AB);
+        assert_eq!(reg1.bits(), 0x1B97_56AB);
 
         let reg11: AttestationFeaturesRegister1 = FeatureRegister(reg1.bits()).into();
         assert_eq!(reg11.rak_format(), Ok(AttestationKeyFormat::Cose));
         assert_eq!(reg11.max_pat_ext_buf_pg_cnt(), 0x02);
         assert_eq!(reg11.max_pat_pg_cnt(), 0xAB);
+        assert_eq!(reg11.max_concurrent_op_count(), 0xDCBA);
     }
 
     #[test]
@@ -803,6 +966,16 @@ mod tests {
     fn idev_feat() {
         let reg0 = IntegratedDeviceManagementFeaturesRegister0::OP_CONTINUE;
         assert_eq!(reg0.bits(), 0x0000_0002);
+        let reg01: IntegratedDeviceManagementFeaturesRegister0 =
+            FeatureRegister(reg0.bits()).into();
+        assert!(reg01.contains(IntegratedDeviceManagementFeaturesRegister0::OP_CONTINUE));
+
+        let reg1 = IntegratedDeviceManagementFeaturesRegister1::empty()
+            .with_max_concurrent_op_count(0xabcd);
+        assert_eq!(reg1.bits(), 0x0000_abcd);
+        let reg11: IntegratedDeviceManagementFeaturesRegister1 =
+            FeatureRegister(reg1.bits()).into();
+        assert_eq!(reg11.max_concurrent_op_count(), 0xabcd);
     }
 
     #[test]
@@ -812,9 +985,12 @@ mod tests {
         let reg01: MecidManagementFeaturesRegister0 = FeatureRegister(reg0.bits()).into();
         assert!(reg01.contains(MecidManagementFeaturesRegister0::MEC_REFRESH));
 
-        let reg1 = MecidManagementFeaturesRegister1::empty().with_common_mecid_width(0xa);
-        assert_eq!(reg1.bits(), 0x0000_000a);
+        let reg1 = MecidManagementFeaturesRegister1::empty()
+            .with_max_concurrent_op_count(0xabcd)
+            .with_common_mecid_width(0xa);
+        assert_eq!(reg1.bits(), 0x000a_bcda);
         let reg11: MecidManagementFeaturesRegister1 = FeatureRegister(reg1.bits()).into();
         assert_eq!(reg11.common_mecid_width(), 0xa);
+        assert_eq!(reg11.max_concurrent_op_count(), 0xabcd);
     }
 }
