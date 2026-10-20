@@ -449,6 +449,50 @@ impl From<MecidManagementFeaturesRegister0> for FeatureRegister {
     }
 }
 
+bitflags! {
+    /// MECID management service's feature register 1
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    #[repr(transparent)]
+    pub struct MecidManagementFeaturesRegister1 : u64 {}
+}
+
+impl MecidManagementFeaturesRegister1 {
+    const COMMON_MECID_WIDTH_SHIFT: u32 = 0;
+    const COMMON_MECID_WIDTH_MASK: u64 = 0b1111;
+
+    /// Returns the COMMON_MECID_WIDTH field. The common MECID width is the value returned + 1.
+    pub fn common_mecid_width(&self) -> u64 {
+        (self.bits() >> Self::COMMON_MECID_WIDTH_SHIFT) & Self::COMMON_MECID_WIDTH_MASK
+    }
+
+    /// Sets the COMMON_MECID_WIDTH field
+    pub fn set_common_mecid_width(&mut self, value: u64) {
+        assert!(value & Self::COMMON_MECID_WIDTH_MASK == value);
+        let offset = Self::COMMON_MECID_WIDTH_SHIFT;
+        *self = Self::from_bits_retain(
+            (self.bits() & !(Self::COMMON_MECID_WIDTH_MASK << offset)) | (value << offset),
+        );
+    }
+
+    /// Sets the COMMON_MECID_WIDTH field
+    pub fn with_common_mecid_width(mut self, value: u64) -> Self {
+        self.set_common_mecid_width(value);
+        self
+    }
+}
+
+impl From<FeatureRegister> for MecidManagementFeaturesRegister1 {
+    fn from(value: FeatureRegister) -> Self {
+        Self::from_bits_retain(value.0)
+    }
+}
+
+impl From<MecidManagementFeaturesRegister1> for FeatureRegister {
+    fn from(value: MecidManagementFeaturesRegister1) -> Self {
+        Self(value.bits())
+    }
+}
+
 /// Describes how a portion of the Realm attestation key is encoded in the shared buffer
 /// in an invocation of the FIRME_ATTEST_RAK_GET ABI.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
@@ -765,5 +809,12 @@ mod tests {
     fn mecid_feat() {
         let reg0 = MecidManagementFeaturesRegister0::MEC_REFRESH;
         assert_eq!(reg0.bits(), 0x0000_0001);
+        let reg01: MecidManagementFeaturesRegister0 = FeatureRegister(reg0.bits()).into();
+        assert!(reg01.contains(MecidManagementFeaturesRegister0::MEC_REFRESH));
+
+        let reg1 = MecidManagementFeaturesRegister1::empty().with_common_mecid_width(0xa);
+        assert_eq!(reg1.bits(), 0x0000_000a);
+        let reg11: MecidManagementFeaturesRegister1 = FeatureRegister(reg1.bits()).into();
+        assert_eq!(reg11.common_mecid_width(), 0xa);
     }
 }
