@@ -10,6 +10,7 @@
 pub mod features;
 
 use crate::features::FeatureRegister;
+use bitflags::bitflags;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use thiserror::Error;
 
@@ -214,6 +215,8 @@ pub enum FunctionId {
     ServiceFeatures = 0xC4000401,
     /// FIRME_GM_GPI_SET function id
     GmGpiSet = 0xC4000402,
+    /// FIRME_MEC_REFRESH function id
+    MecRefresh = 0xC4000407,
     /// FIRME_GM_GPI_OP_CONTINUE function id
     GmGpiOpContinue = 0xC4000412,
     /// FIRME_GM_GPT_INFO function id
@@ -273,6 +276,11 @@ pub enum Function {
         /// Physical base address of a protected address range.
         pa_range_base: u64,
     },
+    /// FIRME_MEC_REFRESH function id
+    MecRefresh {
+        /// Input parameters encoded into a single register
+        params: MecRefreshParams,
+    },
 }
 
 impl Function {
@@ -286,6 +294,7 @@ impl Function {
             Function::GmGptInfo { .. } => FunctionId::GmGptInfo,
             Function::GmL1GptCreate { .. } => FunctionId::GmL1GptCreate,
             Function::GmL1GptDestroy { .. } => FunctionId::GmL1GptDestroy,
+            Function::MecRefresh { .. } => FunctionId::MecRefresh,
         }
     }
 
@@ -334,6 +343,9 @@ impl Function {
             Self::GmL1GptDestroy { pa_range_base } => {
                 regs[1] = pa_range_base;
             }
+            Self::MecRefresh { params } => {
+                regs[1] = params.bits();
+            }
         }
     }
 }
@@ -368,6 +380,9 @@ impl TryFrom<&[u64; 18]> for Function {
             },
             FunctionId::GmL1GptDestroy => Self::GmL1GptDestroy {
                 pa_range_base: regs[1],
+            },
+            FunctionId::MecRefresh => Self::MecRefresh {
+                params: MecRefreshParams::from_bits_retain(regs[1]),
             },
         };
         Ok(func)
@@ -413,6 +428,8 @@ pub enum Response {
         /// Physical base address of the L1 GPT for the specified protected address range.
         l1_gpt_base: u64,
     },
+    /// FIRME_MEC_REFRESH response
+    MecRefresh,
 }
 
 /// Represents the different statuses `FIRME_GM_GPI_SET` can return
@@ -550,6 +567,9 @@ impl Response {
                 regs[0] = StatusCode::Success.into();
                 regs[2] = l1_gpt_base;
             }
+            Self::MecRefresh => {
+                regs[0] = StatusCode::Success.into();
+            }
         }
     }
 
@@ -678,6 +698,14 @@ impl TryFrom<(FunctionId, &[u64; 18])> for Response {
                     Err(Error::UnsuccessfulCall(status))
                 }
             }
+            FunctionId::MecRefresh => {
+                let status = StatusCode::try_from(regs[0])?;
+                if status == StatusCode::Success {
+                    Ok(Self::MecRefresh)
+                } else {
+                    Err(Error::UnsuccessfulCall(status))
+                }
+            }
         }
     }
 }
@@ -753,6 +781,42 @@ pub enum ParState {
     /// The protected address range is Host-managed and is described by an L0 GPT Table descriptor
     /// that refers to an L1 GPT object.
     HostTable = 3,
+}
+
+bitflags! {
+    /// Input arguments of the FIRME_MEC_REFRESH ABI.
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    pub struct MecRefreshParams : u64 {
+        /// MEC refresh reason. The value 0 means realm creation, 1 means realm destruction.
+        const REFRESH_REASON = 1 << 0;
+    }
+}
+
+impl MecRefreshParams {
+    const MECID_SHIFT: u32 = 32;
+    const MECID_MASK: u64 = 0b1111_1111_1111_1111;
+
+    /// Returns the MECID field
+    pub fn mecid(&self) -> u16 {
+        ((self.bits() >> Self::MECID_SHIFT) & Self::MECID_MASK)
+            .try_into()
+            .unwrap()
+    }
+
+    /// Sets the MECID field
+    pub const fn set_mecid(&mut self, value: u16) {
+        let offset = Self::MECID_SHIFT;
+        *self = Self::from_bits_retain(
+            (self.bits() & !(Self::MECID_MASK << offset)) | ((value as u64) << offset),
+        );
+    }
+
+    /// Sets the MECID field
+    pub const fn with_mecid(mut self, value: u16) -> Self {
+        self.set_mecid(value);
+        self
+    }
 }
 
 #[cfg(test)]
@@ -1324,5 +1388,41 @@ mod tests {
             Response::try_from((FunctionId::GmGptInfo, &regs)),
             Err(Error::UnsuccessfulCall(StatusCode::Denied)),
         );
+    }
+
+    #[test]
+    fn function_id_mec_refresh() {
+        for (bits, mecid, refresh_reason) in [
+            (0, 0, false),
+            (1, 0, true),
+            (0x0000_abcd_0000_0000, 0xabcd, false),
+            (0x0000_abcd_0000_0001, 0xabcd, true),
+            (0x0000_ffff_0000_0000, 0xffff, false),
+            (0x0000_ffff_0000_0001, 0xffff, true),
+            (u64::MAX, 0xffff, true),
+        ] {
+            let mut regs: [u64; 18] = [0; 18];
+            regs[0] = 0x0000_0000_C400_0407;
+            regs[1] = bits;
+
+            let function = Function::try_from(&regs).unwrap();
+            assert_eq!(
+                function,
+                Function::MecRefresh {
+                    params: MecRefreshParams::from_bits_retain(bits),
+                }
+            );
+            if let Function::MecRefresh { params } = function {
+                assert_eq!(params.mecid(), mecid);
+                assert_eq!(
+                    params.contains(MecRefreshParams::REFRESH_REASON),
+                    refresh_reason
+                );
+            }
+
+            let mut regs2 = [u64::MAX; 18];
+            function.copy_to_array(&mut regs2);
+            assert_eq!(regs, regs2);
+        }
     }
 }
